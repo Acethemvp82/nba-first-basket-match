@@ -8,3 +8,7 @@
 - Probability checks retain unlisted-player mass and enforce a total of one per game. Target games and later games are excluded from historical selection.
 
 Verification used Streamlit's AppTest, not a visual browser inspection. No betting backtest, calibration, profit study or Streamlit deployment was completed. This is an experimental research model. A current feed request succeeding does not guarantee future availability.
+
+## Version 1.1 upgrade
+
+Added first-shot position profiles from historical lineups, directional opponent allowance, bounded shot-component adjustment, and explicitly identified opening-tip context. Added tests for ambiguous or later jump balls, missing positions, opponent direction, minimum samples, complementary tip estimates, and probability conservation with adjustment. Eleven model/UI checks passed. Live historical PBP identified an opening tip recipient successfully. Tip estimates do not affect scoring probabilities. No improvement in betting accuracy is claimed.

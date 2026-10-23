@@ -28,7 +28,9 @@ The default uses up to 20 current regular-season games before target tip. The op
 
 Ten listed players do not sum to 100%; residual probability is reserved for other players. Team-first estimates use a 60% smoothed first-scoring share and 40% normalized opening-attempt share times smoothed early conversion. Team matchup estimates shrink historical game-first rates toward 50%. All coefficients are explicit heuristics, not trained parameters. See the app's How it works tab.
 
-Not included: automated confirmed starters, injury adjustment, tip-off matchup model, sportsbook price feeds, proven hit rates, audited tracking or automatic Streamlit hosting. The full roster filter comes from ESPN and may use generic G/F positions.
+Version 1.1 adds a bounded first-shot position matchup adjustment (team tendency plus opponent allowance) and optional tip-win context derived from explicitly identified opening jump balls. G/F/C position groups are used. Both position samples need five valid games before adjustment; both tip samples need five identified tips before a tip estimate is shown. The tip estimate is based on team history and does not affect scoring ranks. Missing data stays neutral. Version 1.0 snapshots remain compatible.
+
+Not included: automated confirmed starters, injury adjustment, confirmed individual-jumper matchup model, sportsbook price feeds, proven hit rates, audited tracking or automatic Streamlit hosting. The full roster filter comes from ESPN and may use generic G/F positions.
 
 ## Check
 
