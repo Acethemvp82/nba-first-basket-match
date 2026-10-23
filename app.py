@@ -27,7 +27,7 @@ def historic(gid):
     return d
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def history(tid, year, cutoff_string, n, prior, basis):
+def history(tid, year, cutoff_string, n, prior, basis, model_version):
     events = {}
     for season in ([year,year-1] if prior else [year]):
         d = live(f'teams/{tid}/schedule?season={season}&seasontype=2')
@@ -95,7 +95,7 @@ with board_tab:
                     for e in active:
                         for c in competitors(e):
                             tid = team_id(c)
-                            jobs[pool.submit(history,tid,year,e['date'],n,prior,market)] = (e['id'],tid)
+                            jobs[pool.submit(history,tid,year,e['date'],n,prior,market,VERSION)] = (e['id'],tid)
                     loaded = {}
                     for future in as_completed(jobs):
                         key=jobs[future]
@@ -139,7 +139,7 @@ with board_tab:
                     st.info('Scheduled tip reached; pregame board withheld.'); continue
                 rows,res=forecast(hist,selected,metadata)
                 abbreviations={team_id(c):c['team']['abbreviation'] for c in cs}
-                with st.expander('Opening matchup — tip-off and first-shot positions'):
+                with st.expander('Opening matchup — tip-off, first shots and first baskets'):
                     context=opening_context(hist)
                     detail=[]
                     for tid,ctx in context.items():
@@ -150,9 +150,12 @@ with board_tab:
                             detail.append({'Team':abbreviations[tid],'Position group':pos,
                                            'Team first-shot share %':100*ctx['own']['rates'][pos] if ctx['own']['rates'][pos] is not None else None,
                                            'Opponent allows first-shot share %':100*ctx['allowed']['rates'][pos] if ctx['allowed']['rates'][pos] is not None else None,
-                                           'Team games':ctx['own']['n'],'Opponent games':ctx['allowed']['n']})
-                    st.dataframe(pd.DataFrame(detail).style.format({'Team first-shot share %':'{:.1f}','Opponent allows first-shot share %':'{:.1f}'},na_rep='—'),hide_index=True,width='stretch')
-                    st.caption('Smoothed shares. G = guards, F = forwards, C = centers. Both position samples need at least five games before a bounded adjustment affects the opening-shot component. Unknown or hybrid positions stay neutral.')
+                                           'Team games':ctx['own']['n'],'Opponent shot games':ctx['allowed']['n'],
+                                           'Opponent first FG allowed count':ctx['basket_allowed']['counts'].get(pos,0) if ctx['basket_allowed']['n'] else None,
+                                           'Opponent first FG allowed %':100*ctx['basket_allowed']['counts'].get(pos,0)/ctx['basket_allowed']['n'] if ctx['basket_allowed']['n'] else None,
+                                           'Opponent first FG games':ctx['basket_allowed']['n']})
+                    st.dataframe(pd.DataFrame(detail).style.format({'Team first-shot share %':'{:.1f}','Opponent allows first-shot share %':'{:.1f}','Opponent first FG allowed %':'{:.1f}'},na_rep='—'),hide_index=True,width='stretch')
+                    st.caption('First-shot shares are smoothed. First FG allowed counts and percentages are observed: the first made field goal by the opposing team in each sampled game, excluding free throws. This is separate from its first shot attempt. G = guards, F = forwards, C = centers. Each position signal needs at least five usable games before adjustment. Unknown or hybrid positions stay neutral.')
                 for row in rows:
                     row.update({'Game ID':gid,'Matchup':e['shortName'],'Team':abbreviations[row['Team ID']],
                                 'Lineup':'User confirmed' if all(confirms) else 'Projected',
@@ -171,7 +174,7 @@ with board_tab:
                 a.metric('Players ranked',len(df));b.metric('Games loaded',df['Game ID'].nunique());c.metric('Lineups', 'Confirmed by you' if (df['Lineup']=='User confirmed').all() else 'Check starters')
                 filt=st.multiselect('Team filter',sorted(df['Team'].unique()))
                 shown=df[df['Team'].isin(filt)] if filt else df
-                columns=['Overall Rank','Team Rank','Player','Team','Position','Game first %','Team first %','Research tier','Shot matchup','Opening shot %','Early FG %','Early FGA','Team scores first %','Team first hits','Starts','Sample','Lineup']
+                columns=['Overall Rank','Team Rank','Player','Team','Position','Game first %','Team first %','Research tier','Why ranked','Shot matchup','Opening shot %','Early FG %','Early FGA','Team scores first %','Team first hits','Starts','Sample','Lineup']
                 def colors(r):
                     bg='#153e34' if r['Research tier']=='Top team candidate' else '#493b19' if r['Research tier']=='Limited data' else '#172236'
                     return [f'background-color:{bg};color:#eef4fa' for _ in r]
@@ -205,7 +208,7 @@ with tracking_tab:
     if upload and st.button('Check final results'):
         try:
             snap=json.load(upload)
-            if snap.get('version') not in ['1.0.0',VERSION] or snap.get('basis') not in ['Field goal','First points']: raise ValueError('Unsupported snapshot')
+            if snap.get('version') not in ['1.0.0','1.1.0',VERSION] or snap.get('basis') not in ['Field goal','First points']: raise ValueError('Unsupported snapshot')
             saved_at=utc(snap['created_at']); saved=snap['rows']; result=[]
             if not saved: raise ValueError('Empty snapshot')
             for gid in dict.fromkeys(str(r['Game ID']) for r in saved):
@@ -232,12 +235,16 @@ with method_tab:
 
 **Opening shot %** is the share of sampled team games in which the player took that team's first field-goal attempt. **Early FG %** is actual shooting in the opening three minutes of the first quarter. **Starts** counts starts within that team's sample, not career starts.
 
-### Transparent v1.1 formula
+### Transparent v1.2 formula
 The team's game-first rate is shrunk toward 50% with ten prior games. Its matchup chance averages that rate and the opponent's failure-to-score-first rate.
 
 Within each team, the model uses six buckets: the five selected players plus all other players. Each bucket receives one prior first-scoring event and one prior opening attempt. A player's team-first estimate is **60% smoothed first-scoring share + 40% normalized opening-shot share × smoothed early FG conversion**. Conversion uses a 45% prior with ten attempts. Game-first estimate = team-first estimate × team game-first chance.
 
 **Shot matchup** combines the team's first-shot position tendency and its opponent's first-shot position allowance. Positions are grouped as G/F/C. Each profile is smoothed with ten prior games toward its historical starter position mix. The geometric mean of the two position lifts adjusts only the 40% opening-shot component, capped between 0.85 and 1.15 before normalization. Both profiles need at least five usable games; otherwise the multiplier is exactly 1.0. Favorable means a multiplier of at least 1.05; Tougher means at most 0.95. This position adjustment is experimental, not a measured improvement in accuracy.
+
+**First basket allowed by position** uses the first made field goal by the opposing team in each sampled game, even when a free throw came first. It does not use the first missed attempt or require that the opponent scored first in the entire game. The detail table shows observed counts, percentages and sample size. For ranking, the opponent allowance profile is smoothed toward its historical starter position mix with ten prior games. The position lift adjusts only the 60% first-scoring component, capped between 0.85 and 1.15; that component is then normalized including the unlisted-player bucket. Fewer than five usable opponent games or an unknown player position means no adjustment. First-points mode still includes free throws in its base scoring history; this added matchup signal always uses made field goals.
+
+**Why ranked** summarizes the player's observed opening-shot count, basket-position matchup label, any favorable/tougher shot-position signal, and a limited-history flag when appropriate. It explains signals rather than promising a result. The two position adjustments are heuristic and may be correlated; saved pregame results are needed to assess their value.
 
 **Tip-off estimate** uses only identifiable opening jump balls at 12:00 in quarter one, matching the possession recipient to the historical roster. Missing or ambiguous events are skipped. Team tip rates shrink toward 50% with ten prior games; the matchup averages a team's win rate with the opponent's loss rate. At least five identifiable tips on each side are required. This is team history, not an individual-jumper probability, and is displayed as context only without changing the scoring estimates.
 
@@ -248,7 +255,7 @@ Only completed regular-season games strictly before the target tip are sampled. 
 
 Current rosters come from ESPN. Starter defaults are copied from the latest sampled game and intersected with that roster. Confirm all five starters and injuries yourself. ESPN may report grouped G/F positions; this app does not invent PG/SG/SF/PF labels.
 
-No confirmed jumper lineup, automatic injury adjustment, sportsbook odds feed, general defense-versus-position score, or backtested profitability is included. First-shot allowance is an opening tendency, not a general defensive rating. Repeated saved pregame forecasts and settled results are needed before assessing calibration. A high rank is a relative research signal and does not mean a likely winning bet. Version 1.0 pregame snapshots remain supported by the tracker.
+No confirmed jumper lineup, automatic injury adjustment, sportsbook odds feed, general defense-versus-position score, or backtested profitability is included. First-shot and first-basket allowance are opening tendencies, not general defensive ratings. Repeated saved pregame forecasts and settled results are needed before assessing calibration. A high rank is a relative research signal and does not mean a likely winning bet. Version 1.0 and 1.1 pregame snapshots remain supported by the tracker.
 
 ### Sources
 [ESPN NBA](https://www.espn.com/nba/) supplies the public scoreboard, team schedule, roster, boxscore and play-by-play endpoints. These endpoints are unofficial, can change, and carry no uptime guarantee. This model is independent of ESPN and the NBA.

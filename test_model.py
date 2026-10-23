@@ -1,7 +1,7 @@
 import unittest
 from copy import deepcopy
 from datetime import datetime, timezone
-from model import parse_game, forecast, prior_events, implied, opening_context, shot_adjustment, position_profile
+from model import parse_game, forecast, prior_events, implied, opening_context, shot_adjustment, position_profile, basket_adjustment, rank_reason
 
 def fixture():
     def play(seq,team,pid,made,points,typ='shot'):
@@ -15,6 +15,38 @@ def fixture():
                 {'athlete':{'id':t+str(i),'displayName':t+str(i)},'starter':True} for i in range(1,6)]}]} for t in ['A','B']]}}
 
 class ModelTests(unittest.TestCase):
+    def test_basket_allowance_uses_made_fg_not_attempt_or_ft(self):
+        d=fixture()
+        for block in d['boxscore']['players']:
+            for i,a in enumerate(block['statistics'][0]['athletes']):a['athlete']['position']={'abbreviation':['G','G','F','F','C'][i]}
+        # A1's free throw, B2's missed three, A2's made two, B1's made two.
+        # Make A2 a center so A's first points and made-FG positions differ.
+        d['boxscore']['players'][0]['statistics'][0]['athletes'][1]['athlete']['position']['abbreviation']='C'
+        g=parse_game(d,'First points')
+        self.assertEqual(g['first']['A'],'A1')
+        self.assertEqual(g['first_fg']['A'],'A2')
+        allowed=position_profile([g]*10,'B',allowed=True,event='first_fg')
+        self.assertEqual(allowed['counts'],{'C':10})
+        ctx=opening_context({'A':[g]*10,'B':[g]*10})
+        self.assertEqual(basket_adjustment(ctx['A'],'C'),(1.15,'Favorable'))
+        small=opening_context({'A':[g]*4,'B':[g]*4})
+        self.assertEqual(basket_adjustment(small['A'],'C'),(1.0,'Limited data'))
+        self.assertEqual(basket_adjustment(ctx['A'],'G-F'),(1.0,'Limited data'))
+        selected={t:sorted(g['starters'][t]) for t in ['A','B']}
+        rows,res=forecast({'A':[g]*10,'B':[g]*10},selected,g['rosters'])
+        self.assertAlmostEqual(sum(r['Game first %']/100 for r in rows)+sum(res.values()),1)
+        row=next(r for r in rows if r['Player ID']=='A2')
+        self.assertEqual(row['Opponent first FG position hits'],10)
+        self.assertEqual(row['Opponent first FG position %'],100)
+    def test_reason_reports_counts_and_limitations(self):
+        reason=rank_reason(1,2,2,'Limited data','Limited data')
+        self.assertIn('Opening shots 1/2',reason)
+        self.assertIn('insufficient data',reason)
+        self.assertIn('Limited history',reason)
+        reason=rank_reason(6,20,18,'Favorable','Tougher')
+        self.assertIn('Basket matchup: tougher',reason)
+        self.assertIn('Shot matchup: favorable',reason)
+        self.assertNotIn('Limited history',reason)
     def test_tip_requires_explicit_opening_recipient(self):
         d=fixture();jump={'sequenceNumber':'0','period':{'number':1},'clock':{'displayValue':'12:00'},'type':{'text':'Jumpball'},'team':{'id':'B'},'participants':[{'athlete':{'id':p}} for p in ['A1','B1','A3']],'text':'A1 vs. B1 (A3 gains possession)'}
         d['plays'].append(jump)

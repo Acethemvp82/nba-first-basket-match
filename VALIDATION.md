@@ -1,5 +1,9 @@
 # Validation — October 23, 2026
 
+## Version 1.2 upgrade
+
+Thirteen model and Streamlit checks passed. New coverage separates free throws, missed opening attempts, and the first made field goal; verifies directional opponent position counts and observed percentages; checks minimum samples and unknown-position neutrality; preserves game probability mass after both position adjustments; and verifies per-player explanations in the rendered board. A real historical summary also parsed both teams' first made field goals and usable allowance profiles. This is implementation validation, not evidence of increased betting accuracy.
+
 - Eight automated checks passed, including a Streamlit app test that renders ten players and switches settlement basis.
 - Live ESPN scoreboard, team schedule, roster and game summary requests succeeded from the build environment.
 - A completed October 22, 2025 game parsed both field-goal and first-points outcomes, five historical starters for each team, and opening shooting data.

@@ -5,17 +5,18 @@ from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 
 BASE = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/'
-VERSION = '1.1.0'
+VERSION = '1.2.0'
 
 def position_group(position):
     return {'PG':'G','SG':'G','G':'G','SF':'F','PF':'F','F':'F','C':'C'}.get(position)
 
-def position_profile(games, tid, allowed=False):
+def position_profile(games, tid, allowed=False, event='attempts'):
     counts, baseline, valid = Counter(), Counter(), 0
     for g in games:
-        shooting_team = next((t for t in g['attempts'] if t != tid), None) if allowed else tid
+        events = g.get(event, {})
+        shooting_team = next((t for t in events if t != tid), None) if allowed else tid
         roster = g['rosters'].get(shooting_team, {})
-        group = position_group(roster.get(g['attempts'].get(shooting_team), {}).get('position'))
+        group = position_group(roster.get(events.get(shooting_team), {}).get('position'))
         lineup = [position_group(roster.get(p, {}).get('position')) for p in g['starters'].get(shooting_team, [])]
         if group is None or len(lineup)!=5 or any(p is None for p in lineup):
             continue
@@ -23,7 +24,7 @@ def position_profile(games, tid, allowed=False):
     # Compare position frequency with the number of starters in that position.
     rates = {p: (counts[p]+10*baseline[p]/(5*valid))/(valid+10) if valid else None for p in ['G','F','C']}
     lifts = {p: rates[p]/(baseline[p]/(5*valid)) if valid and baseline[p] else 1.0 for p in rates}
-    return {'n':valid,'rates':rates,'lifts':lifts}
+    return {'n':valid,'rates':rates,'lifts':lifts,'counts':dict(counts)}
 
 def opening_context(histories):
     result={}; tids=list(histories)
@@ -31,10 +32,11 @@ def opening_context(histories):
         opp=next(t for t in tids if t!=tid)
         own=position_profile(histories[tid],tid)
         allowed=position_profile(histories[opp],opp,allowed=True)
+        baskets=position_profile(histories[opp],opp,allowed=True,event='first_fg')
         tips=[g['tip_winner'] for g in histories[tid] if g.get('tip_winner') in g['first']]
         opp_tips=[g['tip_winner'] for g in histories[opp] if g.get('tip_winner') in g['first']]
         chance=((sum(t==tid for t in tips)+5)/(len(tips)+10)+1-(sum(t==opp for t in opp_tips)+5)/(len(opp_tips)+10))/2 if min(len(tips),len(opp_tips))>=5 else None
-        result[tid]={'own':own,'allowed':allowed,'tip_n':len(tips),'opp_tip_n':len(opp_tips),'tip_chance':chance}
+        result[tid]={'own':own,'allowed':allowed,'basket_allowed':baskets,'tip_n':len(tips),'opp_tip_n':len(opp_tips),'tip_chance':chance}
     return result
 
 def shot_adjustment(context, position):
@@ -44,6 +46,22 @@ def shot_adjustment(context, position):
     lift=(context['own']['lifts'][group]*context['allowed']['lifts'][group])**.5
     factor=max(.85,min(1.15,lift))
     return factor, 'Favorable' if factor>=1.05 else 'Tougher' if factor<=.95 else 'Neutral'
+
+def basket_adjustment(context, position):
+    group=position_group(position)
+    profile=context['basket_allowed']
+    if group is None or profile['n']<5:
+        return 1.0,'Limited data'
+    factor=max(.85,min(1.15,profile['lifts'][group]))
+    return factor, 'Favorable' if factor>=1.05 else 'Tougher' if factor<=.95 else 'Neutral'
+
+def rank_reason(opening_attempts, sample, starts, shot_label, basket_label):
+    parts=[f'Opening shots {opening_attempts}/{sample}']
+    if basket_label=='Limited data': parts.append('Basket matchup: insufficient data')
+    else: parts.append(f'Basket matchup: {basket_label.lower()}')
+    if shot_label in ['Favorable','Tougher']: parts.append(f'Shot matchup: {shot_label.lower()}')
+    if sample<15 or starts<8: parts.append('Limited history')
+    return ' • '.join(parts)
 
 def fetch(path):
     with urlopen(Request(BASE + path, headers={'Accept': 'application/json'}), timeout=20) as r:
@@ -79,7 +97,7 @@ def parse_game(data, market='Field goal'):
     if not comp['status']['type'].get('completed'):
         raise ValueError('Incomplete historical game')
     plays = sorted(data.get('plays', []), key=lambda p: int(p.get('sequenceNumber', 0)))
-    first, attempts, early, global_first = {}, {}, {}, None
+    first, first_fg, attempts, early, global_first = {}, {}, {}, {}, None
     teams = [str(c['team']['id']) for c in comp['competitors']]
     for p in plays:
         tid = str(p.get('team', {}).get('id', ''))
@@ -88,6 +106,7 @@ def parse_game(data, market='Field goal'):
             continue
         if is_fg(p):
             attempts.setdefault(tid, pid)
+            if p.get('scoringPlay'): first_fg.setdefault(tid,pid)
             clock = p.get('clock', {}).get('displayValue', '0:00').split(':')
             remaining = float(clock[0])*60 + float(clock[1]) if len(clock)==2 else float(clock[0])
             if p.get('period', {}).get('number') == 1 and remaining >= 540:
@@ -100,7 +119,7 @@ def parse_game(data, market='Field goal'):
             if global_first is None:
                 global_first = (tid, pid)
     # Missing either team's opening event means the PBP is not reliable enough.
-    if len(first) != 2 or len(attempts) != 2 or global_first is None:
+    if len(first) != 2 or len(first_fg) != 2 or len(attempts) != 2 or global_first is None:
         raise ValueError('Missing opening play-by-play')
     rosters, starters = {}, {}
     for block in data.get('boxscore', {}).get('players', []):
@@ -127,7 +146,7 @@ def parse_game(data, market='Field goal'):
             if len(matches)==1: tip_winner=matches[0]
         break
     return {'id': str(comp['id']), 'date': comp['date'], 'first': first, 'tip_winner':tip_winner,
-            'attempts': attempts, 'early': early, 'global_first': global_first,
+            'first_fg':first_fg, 'attempts': attempts, 'early': early, 'global_first': global_first,
             'rosters': rosters, 'starters': starters}
 
 def forecast(histories, selected, metadata):
@@ -158,16 +177,28 @@ def forecast(histories, selected, metadata):
             factor=shot_adjustment(context[tid],metadata[tid][pid]['position'])[0] if pid!='OTHER' else 1.0
             raw[pid] = (attempts[pid]+1)/(n+6)*conversion*factor
         total = sum(raw.values())
-        shares = {p: .6*(first[p]+1)/(n+6) + .4*raw[p]/total for p in buckets}
+        # Made-basket matchup modifies only the first-scoring component; keep
+        # the unlisted-player bucket and normalize each component separately.
+        first_raw={p:(first[p]+1)/(n+6)*(basket_adjustment(context[tid],metadata[tid][p]['position'])[0] if p!='OTHER' else 1.0) for p in buckets}
+        first_total=sum(first_raw.values())
+        shares = {p: .6*first_raw[p]/first_total + .4*raw[p]/total for p in buckets}
         game_share = team_chance if idx == 0 else 1-team_chance
         residual[tid] = game_share*shares['OTHER']
         for pid in ids:
             starts = sum(pid in g['starters'][tid] for g in games)
             early_made = sum(g['early'].get((tid,pid), [0,0])[0] for g in games)
             early_att = sum(g['early'].get((tid,pid), [0,0])[1] for g in games)
+            shot_label=shot_adjustment(context[tid],metadata[tid][pid]['position'])[1]
+            basket_label=basket_adjustment(context[tid],metadata[tid][pid]['position'])[1]
+            group=position_group(metadata[tid][pid]['position'])
+            profile=context[tid]['basket_allowed']
             rows.append({'Player ID': pid, 'Player': metadata[tid][pid]['name'], 'Team ID': tid,
                          'Position': metadata[tid][pid]['position'], 'Sample': n,
-                         'Shot matchup':shot_adjustment(context[tid],metadata[tid][pid]['position'])[1],
+                         'Shot matchup':shot_label, 'Basket matchup':basket_label,
+                         'Why ranked':rank_reason(attempts[pid],n,starts,shot_label,basket_label),
+                         'Opponent first FG position hits':profile['counts'].get(group,0) if group and profile['n'] else None,
+                         'Opponent first FG position sample':profile['n'],
+                         'Opponent first FG position %':100*profile['counts'].get(group,0)/profile['n'] if group and profile['n'] else None,
                          'Team tip estimate %':100*context[tid]['tip_chance'] if context[tid]['tip_chance'] is not None else None,
                          'Position sample':context[tid]['own']['n'], 'Opponent position sample':context[tid]['allowed']['n'],
                          'Starts': starts, 'Team first hits': first[pid],

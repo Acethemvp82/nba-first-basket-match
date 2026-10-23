@@ -1,5 +1,7 @@
 # First Basket Match
 
+Version 1.2 adds a **Why ranked** explanation per player and **first made field goal allowed by position** in the existing opening-matchup details. Made-FG allowance is always separate from shot attempts and excludes free throws, including in first-points mode. Observed counts, percentages and usable sample sizes are shown. A smoothed opponent position lift affects only the 60% first-scoring component, capped at 0.85–1.15 before normalization, and requires five usable games. Missing positions and smaller samples stay neutral. Prior 1.0 and 1.1 tracker snapshots remain supported. These adjustments are experimental and have not demonstrated improved accuracy.
+
 Separate NBA first-basket Streamlit research app. Uses free ESPN data; no API key.
 
 ## Run
