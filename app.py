@@ -10,7 +10,9 @@ ET = ZoneInfo('America/New_York')
 st.set_page_config(page_title='First Basket Match', page_icon='🏀', layout='wide')
 st.markdown('''<style>.block-container{padding-top:2rem}h1{letter-spacing:-1px}
 [data-testid="stMetric"]{background:#172236;padding:16px;border-radius:12px}
-div[data-testid="stCaptionContainer"]{color:#a9b8cc}</style>''', unsafe_allow_html=True)
+div[data-testid="stCaptionContainer"]{color:#a9b8cc}
+.stTabs [role="tab"][aria-selected="true"]{color:#bfdbfe}
+</style>''', unsafe_allow_html=True)
 st.caption('ACE THE MVP  /  NBA RESEARCH')
 st.title('First Basket Match')
 st.write('Opening opportunity. First scoring touch. One board.')
