@@ -80,7 +80,7 @@ with st.sidebar:
     st.caption('Free ESPN feed. Five-minute slate cache; final play-by-play cached for one day.')
     if st.button('Refresh data', width='stretch'):
         st.cache_data.clear(); st.rerun()
-    st.caption('While this page is open, starter status rechecks every 60 seconds. No background updates when closed.')
+    st.caption('While open, starters recheck every 60 seconds. The automatic pregame archive runs separately.')
 
 @st.fragment(run_every=60)
 def render_model():
