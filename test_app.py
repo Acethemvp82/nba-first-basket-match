@@ -16,9 +16,18 @@ class AppTest(unittest.TestCase):
         future={'id':'future','date':tip,'shortName':'A @ B','status':{'type':{'state':'pre','detail':'Scheduled','completed':False}},'competitions':[{'competitors':teams}]}
         past={'id':'g','date':(now-timedelta(days=1)).isoformat(),'season':{'year':2027},'seasonType':{'type':2},'competitions':[{'status':{'type':{'completed':True}}}]}
         data=fixture();data['header']['competitions'][0]['date']=past['date']
+        lineup_state={'ready':False}
+        def refresh(at):
+            next(b for b in at.button if b.label=='Refresh data').click().run()
+            return at
         def fake(path):
             if path.startswith('scoreboard'):return {'events':[future],'season':{'year':2027}}
             if '/schedule?' in path:return {'events':[{**past,'id':f'g{i}','date':(now-timedelta(days=i+1)).isoformat()} for i in range(5)]}
+            if path=='summary?event=future':
+                current=deepcopy(data);comp=current['header']['competitions'][0]
+                comp.update({'id':'future','date':tip,'status':{'type':{'state':'pre','completed':False}}})
+                if not lineup_state['ready']:current['boxscore']['players']=[]
+                return current
             if path.startswith('summary'):return deepcopy(data)
             if path.endswith('/roster'):
                 tid=path.split('/')[1]
@@ -36,9 +45,10 @@ class AppTest(unittest.TestCase):
             details=next(d.value for d in at.dataframe if 'Opponent first FG allowed count' in d.value.columns)
             self.assertTrue((details['Opponent first FG games']==0).all())
             self.assertFalse(any('Pick' in d.value.columns for d in at.dataframe))
-            for box in at.checkbox:
-                if box.label=='I verified these five starters and availability':box.check()
-            at.run()
+            self.assertFalse(any('verified' in box.label.lower() for box in at.checkbox))
+            self.assertFalse(any(x.label=='Select five starters' for x in at.multiselect))
+            lineup_state['ready']=True
+            refresh(at)
             self.assertFalse(at.exception)
             shortlist=next(d.value for d in at.dataframe if 'Pick' in d.value.columns)
             self.assertEqual(len(shortlist),1)
@@ -48,10 +58,10 @@ class AppTest(unittest.TestCase):
             price.set_value(650).run()
             self.assertFalse(at.exception)
             self.assertEqual(next(d.value for d in at.dataframe if 'Pick' in d.value.columns).iloc[0]['Your odds'],'+650')
-            # A changed lineup must require a fresh user confirmation.
-            lineup=next(x for x in at.multiselect if x.label=='Select five starters')
-            vals=list(lineup.value);vals[-1]='A6'
-            lineup.set_value(vals).run()
+            # Missing source confirmation must remove eligibility automatically.
+            lineup_state['ready']=False
+            refresh(at)
+            self.assertFalse(at.exception)
             self.assertFalse(any('Pick' in d.value.columns for d in at.dataframe))
             next(r for r in at.radio if r.label=='Settlement basis').set_value('First points').run()
             next(b for b in at.button if b.label=='Load / update prediction board').click().run()

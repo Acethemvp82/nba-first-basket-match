@@ -1,5 +1,9 @@
 # Validation — October 23, 2026
 
+## Version 1.4 — October 29, 2026
+
+Removed manual starter selection/confirmation and added exact-event ESPN starter flag validation with clear projected fallback. Main UI refreshes while open via Streamlit fragments every 60 seconds; current starter summaries cache for 45 seconds. Sixteen checks passed, including automatic transition between pending and source-confirmed lineups, absence of manual verification controls, rejection of old-game/postgame/incomplete/non-roster starters and exclusion from the shortlist when confirmation disappears. Live ESPN pregame summaries were reachable but had no starter records at test time; no confirmed live pregame lineup was falsely claimed or inferred. No specific pre-tip publication time is guaranteed.
+
 ## Version 1.3 — October 29, 2026
 
 Added a distinct-game shortlist with transparent minimum samples, user-confirmed lineups, pregame eligibility, manually entered prices, and snapshot tracking flags. Tests verify ranking and four-game cap, exclusion of insufficient history and started games, no forced filler picks, and UI behavior for confirmations, blank/entered odds, and changed lineups. Forecast weights and probabilities are unchanged by the shortlist feature. This validation does not establish betting accuracy or profitability.

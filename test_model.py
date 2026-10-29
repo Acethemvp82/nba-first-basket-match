@@ -1,7 +1,7 @@
 import unittest
 from copy import deepcopy
 from datetime import datetime, timezone
-from model import parse_game, forecast, prior_events, implied, opening_context, shot_adjustment, position_profile, basket_adjustment, rank_reason, select_shortlist
+from model import parse_game, forecast, prior_events, implied, opening_context, shot_adjustment, position_profile, basket_adjustment, rank_reason, select_shortlist, source_starters
 
 def fixture():
     def play(seq,team,pid,made,points,typ='shot'):
@@ -16,7 +16,23 @@ def fixture():
 
 class ModelTests(unittest.TestCase):
     def shortlist_row(self,game='1',player='1',chance=15):
-        return {'Game ID':game,'Player ID':player,'Lineup':'User confirmed','Tip UTC':'2026-10-30T23:00Z','Sample':8,'Opponent sample':8,'Starts':5,'Early FGA':9,'Opening shot %':25,'Team first hits':2,'Game first %':chance}
+        return {'Game ID':game,'Player ID':player,'Lineup':'Source confirmed','Tip UTC':'2026-10-30T23:00Z','Sample':8,'Opponent sample':8,'Starts':5,'Early FGA':9,'Opening shot %':25,'Team first hits':2,'Game first %':chance}
+    def test_current_source_starters_require_exact_pregame(self):
+        d=fixture();comp=d['header']['competitions'][0]
+        roster={f'A{i}':{} for i in range(1,7)}
+        tip=comp['date']
+        self.assertEqual(source_starters(d,'g','A',roster,tip),[])
+        comp['status']['type']={'state':'pre','completed':False}
+        self.assertEqual(len(source_starters(d,'g','A',roster,tip)),5)
+        self.assertEqual(source_starters(d,'other','A',roster,tip),[])
+        self.assertEqual(source_starters(d,'g','A',roster,'2026-10-21T23:00Z'),[])
+        self.assertEqual(source_starters(d,'g','A',{'A1':{}},tip),[])
+        athletes=d['boxscore']['players'][0]['statistics'][0]['athletes']
+        athletes[0]['didNotPlay']=True
+        self.assertEqual(source_starters(d,'g','A',roster,tip),[])
+        athletes[0]['didNotPlay']=False;athletes[0]['starter']=False
+        self.assertEqual(source_starters(d,'g','A',roster,tip),[])
+        self.assertEqual(source_starters({},'g','A',roster,tip),[])
     def test_shortlist_distinct_games_and_best_candidate(self):
         now=datetime(2026,10,29,tzinfo=timezone.utc)
         rows=[self.shortlist_row(str(i),str(i),10+i) for i in range(6)]

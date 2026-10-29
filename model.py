@@ -5,7 +5,25 @@ from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 
 BASE = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/'
-VERSION = '1.3.0'
+VERSION = '1.4.0'
+
+def source_starters(summary, event_id, tid, roster, tip):
+    """Accept five explicit starter flags for this exact pregame event only."""
+    comps=summary.get('header',{}).get('competitions',[])
+    if len(comps)!=1: return []
+    comp=comps[0]
+    try:
+        if (str(comp.get('id'))!=str(event_id) or utc(comp['date'])!=utc(tip)
+                or comp.get('status',{}).get('type',{}).get('state')!='pre'):
+            return []
+    except (KeyError,TypeError,ValueError): return []
+    blocks=[b for b in summary.get('boxscore',{}).get('players',[]) if str(b.get('team',{}).get('id'))==str(tid)]
+    if len(blocks)!=1:return []
+    records=[a for s in blocks[0].get('statistics',[]) for a in s.get('athletes',[]) if a.get('starter') is True]
+    ids=[str(a.get('athlete',{}).get('id','')) for a in records]
+    if len(ids)!=5 or len(set(ids))!=5 or any(p not in roster for p in ids):return []
+    if any(a.get('didNotPlay') is True for a in records):return []
+    return ids
 
 SHORTLIST_RULES = {'min_team_games':5,'min_starts':3,'min_early_attempts':3,'max_picks':4}
 
@@ -14,7 +32,7 @@ def select_shortlist(rows, now):
     eligible=[]
     for r in rows:
         try:
-            if (r.get('Lineup')=='User confirmed' and utc(r['Tip UTC'])>now
+            if (r.get('Lineup')=='Source confirmed' and utc(r['Tip UTC'])>now
                     and min(r['Sample'],r['Opponent sample'])>=SHORTLIST_RULES['min_team_games']
                     and r['Starts']>=SHORTLIST_RULES['min_starts']
                     and r['Early FGA']>=SHORTLIST_RULES['min_early_attempts']
