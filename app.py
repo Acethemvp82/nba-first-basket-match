@@ -4,6 +4,11 @@ from zoneinfo import ZoneInfo
 import json
 import pandas as pd
 import streamlit as st
+import importlib
+import model as _model
+# Streamlit can retain an already-imported module during a source update.
+if not hasattr(_model, 'select_shortlist'):
+    importlib.reload(_model)
 from model import fetch, competitors, team_id, utc, prior_events, parse_game, forecast, implied, VERSION, opening_context, select_shortlist, SHORTLIST_RULES
 
 ET = ZoneInfo('America/New_York')
