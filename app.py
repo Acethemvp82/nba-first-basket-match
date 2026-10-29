@@ -25,6 +25,11 @@ st.title('First Basket Match')
 st.write('Opening opportunity. First scoring touch. One board.')
 st.caption('Experimental model • rankings and model estimates are not validated betting edges.')
 
+def priority_colors(row):
+    background={'Top game candidate':'#174c3c','Limited data':'#4a391f',
+                'Awaiting starters':'#303946'}.get(row['Research tier'],'#172236')
+    return [f'background-color:{background};color:#f3f6fb' for _ in row]
+
 @st.cache_data(ttl=300, show_spinner=False)
 def live(path): return fetch(path)
 
@@ -230,7 +235,18 @@ def render_model():
                     df=pd.DataFrame(all_rows).sort_values('Game first %',ascending=False).reset_index(drop=True)
                     df.insert(0,'Overall Rank',range(1,len(df)+1))
                     df.insert(1,'Team Rank',df.groupby(['Game ID','Team ID'])['Game first %'].rank(method='first',ascending=False).astype(int))
-                    df['Research tier']=df.apply(lambda r:'Limited data' if r['Sample status']=='Limited' else ('Top team candidate' if r['Team Rank']<=2 else 'Watch'),axis=1)
+                    # Color priority is per game and uses the existing eligibility rules.
+                    # It does not alter estimates, ranks, or shortlist selection.
+                    now_for_priority=datetime.now(ET)
+                    leaders=set()
+                    for game_id in df['Game ID'].unique():
+                        eligible=select_shortlist(df[df['Game ID']==game_id].to_dict('records'),now_for_priority)
+                        if eligible:leaders.add((str(eligible[0]['Game ID']),str(eligible[0]['Player ID'])))
+                    def tier(r):
+                        if r['Lineup']!='Source confirmed':return 'Awaiting starters'
+                        if min(r['Sample'],r['Opponent sample'])<15 or r['Starts']<8:return 'Limited data'
+                        return 'Top game candidate' if (str(r['Game ID']),str(r['Player ID'])) in leaders else 'Research'
+                    df['Research tier']=df.apply(tier,axis=1)
                     picks=select_shortlist(df.to_dict('records'),datetime.now(ET))
                     shortlisted={(str(r['Game ID']),str(r['Player ID'])) for r in picks}
                     listed_odds={}
@@ -251,11 +267,11 @@ def render_model():
                                         else: listed_odds[k]=int(price)
                                 st.caption('Enter live prices from your sportsbook. No odds feed is connected. Missing or invalid prices are saved as blank; no price is invented.')
                             preview['Your odds']=[f'{listed_odds[(str(r["Game ID"]),str(r["Player ID"]))]:+d}' if (str(r['Game ID']),str(r['Player ID'])) in listed_odds else '—' for r in picks]
-                            short_table.dataframe(preview[['Pick','Player','Team','Matchup','Game first %','Your odds','Why ranked','Sample','Starts']].style.format({'Game first %':'{:.1f}'}),hide_index=True,width='stretch')
+                            short_table.dataframe(preview[['Pick','Player','Team','Matchup','Research tier','Game first %','Your odds','Why ranked','Sample','Starts']].style.apply(priority_colors,axis=1).format({'Game first %':'{:.1f}'}),hide_index=True,width='stretch')
                             if len(picks)<4: st.info(f'{len(picks)} eligible game(s). The model has not filled the remaining slots with weaker candidates.')
                         else:
                             st.info('No eligible shortlist yet. Starter status updates automatically; both teams need source-confirmed starters. Candidates also need five sampled games per team, three player starts, three early shot attempts, an opening-shot attempt and a team-first scoring hit in the sample.')
-                        st.caption('These are research criteria, not validated betting edges. Players can still show Limited data on the full board. Four separate first-basket outcomes remain difficult to combine; no winning ticket is promised.')
+                        st.caption('Green: top eligible player in a game, source-confirmed starters, ≥15 sampled games per team and ≥8 player starts. Amber: limited history. Gray: awaiting starters. Color means research priority, not a guaranteed first basket.')
                     df['Shortlisted']=[(str(r['Game ID']),str(r['Player ID'])) in shortlisted for r in df.to_dict('records')]
                     df['Listed American odds']=[listed_odds.get((str(r['Game ID']),str(r['Player ID']))) for r in df.to_dict('records')]
                     a,b,c=st.columns(3)
@@ -263,11 +279,8 @@ def render_model():
                     filt=st.multiselect('Team filter',sorted(df['Team'].unique()))
                     shown=df[df['Team'].isin(filt)] if filt else df
                     columns=['Overall Rank','Team Rank','Player','Team','Position','Game first %','Team first %','Research tier','Why ranked','Shot matchup','Opening shot %','Early FG %','Early FGA','Team scores first %','Team first hits','Starts','Sample','Lineup']
-                    def colors(r):
-                        bg='#153e34' if r['Research tier']=='Top team candidate' else '#493b19' if r['Research tier']=='Limited data' else '#172236'
-                        return [f'background-color:{bg};color:#eef4fa' for _ in r]
-                    st.dataframe(shown[columns].style.apply(colors,axis=1).format({x:'{:.1f}' for x in ['Game first %','Team first %','Opening shot %','Early FG %','Team scores first %']},na_rep='—'),hide_index=True,width='stretch')
-                    st.caption('Green = top two on a team with ≥15 team games and ≥8 player starts. Amber = limited sample. Colors show research priority, not proven profit. Overall ranks cover loaded matchups only.')
+                    st.dataframe(shown[columns].style.apply(priority_colors,axis=1).format({x:'{:.1f}' for x in ['Game first %','Team first %','Opening shot %','Early FG %','Team scores first %']},na_rep='—'),hide_index=True,width='stretch')
+                    st.caption('Green = top eligible game candidate with adequate history. Amber = limited history. Gray = awaiting source-confirmed starters. Other rows stay navy. Labels explain each color; overall ranks cover loaded matchups only.')
                     st.dataframe(pd.DataFrame(residuals),hide_index=True,width='stretch')
                     st.caption('Unlisted-player probability is retained, so the ten listed players are not forced to total 100%.')
                     st.subheader('Compare a sportsbook price')
