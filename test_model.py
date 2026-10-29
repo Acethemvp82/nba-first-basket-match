@@ -1,7 +1,7 @@
 import unittest
 from copy import deepcopy
 from datetime import datetime, timezone
-from model import parse_game, forecast, prior_events, implied, opening_context, shot_adjustment, position_profile, basket_adjustment, rank_reason, select_shortlist, source_starters
+from model import parse_game, forecast, prior_events, implied, opening_context, shot_adjustment, position_profile, basket_adjustment, rank_reason, select_shortlist, source_starters, shot_type, tip_conversion, jumper_records, shot_style, position_summary
 
 def fixture():
     def play(seq,team,pid,made,points,typ='shot'):
@@ -15,6 +15,26 @@ def fixture():
                 {'athlete':{'id':t+str(i),'displayName':t+str(i)},'starter':True} for i in range(1,6)]}]} for t in ['A','B']]}}
 
 class ModelTests(unittest.TestCase):
+    def test_tip_conversion_denominator_and_settlement_basis(self):
+        g=parse_game(fixture(),'Field goal');g['tip_winner']='A'
+        other=deepcopy(g);other['tip_winner']='B'
+        missing=deepcopy(g);missing['tip_winner']=None
+        c=tip_conversion([g,other,missing],'A')
+        self.assertEqual((c['fg_hits'],c['fg_n'],c['points_hits'],c['points_n']),(1,1,1,1))
+        self.assertEqual(g['global_first_points'],('A','A1'))
+        self.assertEqual(g['global_first_fg'],('A','A2'))
+    def test_shot_style_and_ties(self):
+        g=parse_game(fixture())
+        self.assertEqual(g['opening_types']['B']['type'],'3PT')
+        g['opening_types']['A']={'player':'A2','type':'Layup'}
+        g['first_fg_types']['A']={'player':'A2','type':'Layup'}
+        style=shot_style([g]*3,[g]*5,'A','B','A2')
+        self.assertEqual((style['player_count'],style['player_n'],style['allowed_count'],style['allowed_n']),(3,3,5,5))
+        self.assertIn('3/3',style['note'])
+        other=deepcopy(g);other['opening_types']['A']['type']='Dunk'
+        self.assertIsNone(shot_style([g,other],[g]*5,'A','B','A2')['style'])
+        self.assertIn('No clear',position_summary({'n':4,'counts':{'G':2,'C':2}}))
+        self.assertIsNone(shot_type({'shootingPlay':True,'pointsAttempted':2,'text':'unclassified'}))
     def shortlist_row(self,game='1',player='1',chance=15):
         return {'Game ID':game,'Player ID':player,'Lineup':'Source confirmed','Tip UTC':'2026-10-30T23:00Z','Sample':8,'Opponent sample':8,'Starts':5,'Early FGA':9,'Opening shot %':25,'Team first hits':2,'Game first %':chance}
     def test_current_source_starters_require_exact_pregame(self):
@@ -86,6 +106,8 @@ class ModelTests(unittest.TestCase):
         d=fixture();jump={'sequenceNumber':'0','period':{'number':1},'clock':{'displayValue':'12:00'},'type':{'text':'Jumpball'},'team':{'id':'B'},'participants':[{'athlete':{'id':p}} for p in ['A1','B1','A3']],'text':'A1 vs. B1 (A3 gains possession)'}
         d['plays'].append(jump)
         self.assertEqual(parse_game(d)['tip_winner'],'A')
+        self.assertEqual(parse_game(d)['jumpers'],{'A':'A1','B':'B1'})
+        self.assertEqual(jumper_records([parse_game(d)],'A')[0]['Tip wins'],1)
         jump['text']='Unclear possession'
         self.assertIsNone(parse_game(d)['tip_winner'])
         jump['text']='A1 vs. B1 (A3 gains possession)';jump['clock']['displayValue']='6:00'

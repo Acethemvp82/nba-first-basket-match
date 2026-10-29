@@ -24,3 +24,7 @@ Verification used Streamlit's AppTest, not a visual browser inspection. No betti
 ## Version 1.1 upgrade
 
 Added first-shot position profiles from historical lineups, directional opponent allowance, bounded shot-component adjustment, and explicitly identified opening-tip context. Added tests for ambiguous or later jump balls, missing positions, opponent direction, minimum samples, complementary tip estimates, and probability conservation with adjustment. Eleven model/UI checks passed. Live historical PBP identified an opening tip recipient successfully. Tip estimates do not affect scoring probabilities. No improvement in betting accuracy is claimed.
+
+## Version 1.5 — October 29, 2026
+
+Twenty-one checks passed, covering tip-conversion denominators, field-goal vs first-points separation, unknown shot types and tied summaries, historical jumpers, session autosave, refusing after-tip/older forecast replacement, preserving original rows during settlement, and a full background capture-to-settlement simulation. The real ESPN historical fixture parsed both jumpers and the opening-tip recipient. A real archive run completed successfully with no eligible games inside its two-hour capture window and no source errors. The NBA.com backup feed returned HTTP 403; no second-source success is claimed. New research context does not change forecast weights. Live GitHub scheduler operation must be checked separately after publication.

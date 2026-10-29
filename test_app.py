@@ -39,6 +39,7 @@ class AppTest(unittest.TestCase):
             next(b for b in at.button if b.label=='Load / update prediction board').click().run()
             self.assertFalse(at.exception)
             self.assertEqual(next(m for m in at.metric if m.label=='Players ranked').value,'10')
+            self.assertTrue(at.session_state['automatic_pregame_records'])
             board=next(d.value for d in at.dataframe if 'Research tier' in d.value.columns)
             self.assertTrue((board['Research tier']=='Limited data').all())
             self.assertTrue(board['Why ranked'].str.contains('Limited history').all())

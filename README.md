@@ -1,6 +1,6 @@
 # First Basket Match
 
-NBA first-basket Streamlit research app. Free ESPN data; no API key. Version 1.4.
+NBA first-basket Streamlit research app. Free ESPN data; no API key. Version 1.5.
 
 ## Run and deploy
 
@@ -19,7 +19,7 @@ No manual starter selection or verification is required. For each loaded matchup
 
 The app shows **Source confirmed — ESPN game feed** when those checks pass. Otherwise it shows **Projected — awaiting source confirmation**, using the latest sampled game's starters intersected with the current roster for the research board. Projections never count as confirmed and cannot enter the shortlist. If fewer than five projected players remain, that matchup is withheld. Feed failures are disclosed. There is no promise that ESPN publishes starter records before tip, and starter flags are not an independent injury model.
 
-While the page is open, the main view refreshes every 60 seconds. Starter summaries use a 45-second cache, the scoreboard/roster a five-minute cache, history a 30-minute cache, and final raw summaries a one-day cache. The Refresh data button clears caches immediately. Closed pages do not update in the background.
+While the page is open, the main view refreshes every 60 seconds. Starter summaries use a 45-second cache, the scoreboard/roster a five-minute cache, history a 30-minute cache, and final raw summaries a one-day cache. The Refresh data button clears caches immediately. Closed pages do not run lineup refreshes. A separate GitHub Actions archive job can capture default-setting records while the page is closed, as described below.
 
 ## Slate shortlist
 
@@ -35,7 +35,21 @@ The model combines smoothed first-scoring history (60%) and opening-shot share t
 
 Green means a top-two team research candidate with at least 15 sampled games and eight player starts; amber means limited history. Colors and ranks are not proven betting edges.
 
-Download a pregame JSON snapshot before tip. It preserves lineup status, source check time, ranks, shortlist flags and entered odds. Upload it to Results tracker after games finish to settle the saved board, including shortlist hits and pending games. Keep the file on your device: storage is not automatic or audited. Earlier 1.0–1.3 snapshots remain supported. No historical win rate, ROI or profitability is claimed.
+## Automatic pregame records
+
+The app automatically keeps the latest pretip forecast for each loaded game and settlement basis in the open session. These records include your current settings, shortlist flags and manually entered prices. Session records are temporary and can disappear on disconnect; downloading your own copy remains useful.
+
+A separate GitHub Actions workflow runs approximately every ten minutes, subject to GitHub scheduling delays and repository permissions. It captures games within two hours before scheduled tip, using up to 20 current-season regular-season games and field-goal settlement. It does not copy private user inputs or manually entered sportsbook prices. Only public model data is committed under `data/pregame/`. Projections are labeled; only source-confirmed candidates can be shortlisted. Capture failures are reported, not backfilled with postgame rankings. A source that publishes starters after tip cannot produce a confirmed pregame shortlist record.
+
+The archive keeps the latest captured pretip board per game; after tip its forecast rows remain unchanged. Final results are appended separately with a hash of the original forecast rows. Results tracker reads the latest repository records automatically and can also settle open-session records when final data becomes available. Its automatic archive scope differs from a user-selected slate; overall ranks refer to that record's capture scope. Missing captures, scheduling delays, public-feed outages and unavailable lineups remain possible. GitHub Actions must be enabled and allowed to write repository contents. The workflow supports a manual Run workflow action too.
+
+Earlier version 1.0–1.4 snapshots remain supported through optional upload. No historical win rate, ROI or profitability is claimed.
+
+## Added research context
+
+Opening-matchup details show actual first-FG and first-points conversions **after identified tip wins**, with their true denominators. Historical jumper counts are shown without claiming today's jumper or head-to-head odds. Opening shot styles distinguish layups, dunks, hooks, 2PT jumpers and 3PT shots; unknown types are excluded. Ties show no clear position or style preference. These new context statistics do not alter the forecast weights; prospective results are needed to evaluate them.
+
+A second NBA.com feed was inaccessible from the build environment. No unverified backup starter integration is claimed; ESPN remains the current lineup source.
 
 ## Checks
 

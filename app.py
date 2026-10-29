@@ -2,14 +2,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import json
+from pathlib import Path
 import pandas as pd
 import streamlit as st
 import importlib
 import model as _model
 # Streamlit can retain an already-imported module during a source update.
-if not hasattr(_model, 'source_starters'):
+if getattr(_model, 'VERSION', None) != '1.5.0':
     importlib.reload(_model)
-from model import fetch, competitors, team_id, utc, prior_events, parse_game, forecast, implied, VERSION, opening_context, select_shortlist, SHORTLIST_RULES, source_starters
+from model import fetch, competitors, team_id, utc, prior_events, parse_game, forecast, implied, VERSION, opening_context, select_shortlist, SHORTLIST_RULES, source_starters, tip_conversion, jumper_records, shot_style, position_summary
+from archive import snapshot as make_snapshot, keep_pregame, settle
 
 ET = ZoneInfo('America/New_York')
 st.set_page_config(page_title='First Basket Match', page_icon='🏀', layout='wide')
@@ -29,6 +31,18 @@ def live(path): return fetch(path)
 @st.cache_data(ttl=45, show_spinner=False)
 def game_lineups(gid):
     return fetch('summary?event='+gid), datetime.now(ET).isoformat()
+
+@st.cache_data(ttl=60, show_spinner=False)
+def background_records():
+    data=Path(__file__).resolve().parent/'data'
+    index_path=data/'index.json'
+    if not index_path.exists():return {},{}
+    index=json.loads(index_path.read_text());records={}
+    for entry in index.get('records',[])[:100]:
+        path=(data/entry['path']).resolve()
+        if not path.is_relative_to(data.resolve()) or not path.is_file():continue
+        records[entry['path']]=json.loads(path.read_text())
+    return records,index
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def historic(gid):
@@ -169,6 +183,16 @@ def render_model():
                             chance=ctx['tip_chance']
                             tip_text=f"{chance:.1%}" if chance is not None else 'Insufficient tip data'
                             st.caption(f"{abbreviations[tid]} tip-win estimate: {tip_text} • identified tips: {ctx['tip_n']} own / {ctx['opp_tip_n']} opponent. Team-history estimate, not a confirmed jumper matchup. Tip estimate does not change the scoring ranks.")
+                            conversion=tip_conversion(hist[tid],tid)
+                            fg_text=f"{conversion['fg_hits']}/{conversion['fg_n']}" if conversion['fg_n'] else 'Unavailable'
+                            pts_text=f"{conversion['points_hits']}/{conversion['points_n']}" if conversion['points_n'] else 'Unavailable'
+                            st.write(f"{abbreviations[tid]} scored the game’s first FG after winning the tip: **{fg_text}**; first points: **{pts_text}**.")
+                            st.caption('These denominators count identified tip wins, not all sampled games. Descriptive history only; small samples do not raise the score.')
+                            jumpers=jumper_records(hist[tid],tid)
+                            if jumpers:
+                                st.dataframe(pd.DataFrame(jumpers).drop(columns='Player ID').style.format({'Tip win %':'{:.1f}'}),hide_index=True,width='stretch')
+                                st.caption('Historical jumpers only. Today’s jumper has not been confirmed; these percentages are not a head-to-head prediction.')
+                            st.caption(f"{abbreviations[tid]} matchup position summary: {position_summary(ctx['basket_allowed'])}")
                             for pos in ['G','F','C']:
                                 detail.append({'Team':abbreviations[tid],'Position group':pos,
                                                'Team first-shot share %':100*ctx['own']['rates'][pos] if ctx['own']['rates'][pos] is not None else None,
@@ -179,6 +203,18 @@ def render_model():
                                                'Opponent first FG games':ctx['basket_allowed']['n']})
                         st.dataframe(pd.DataFrame(detail).style.format({'Team first-shot share %':'{:.1f}','Opponent allows first-shot share %':'{:.1f}','Opponent first FG allowed %':'{:.1f}'},na_rep='—'),hide_index=True,width='stretch')
                         st.caption('First-shot shares are smoothed. First FG allowed counts and percentages are observed: the first made field goal by the opposing team in each sampled game, excluding free throws. This is separate from its first shot attempt. G = guards, F = forwards, C = centers. Each position signal needs at least five usable games before adjustment. Unknown or hybrid positions stay neutral.')
+                    with st.expander('Opening shot styles — descriptive context'):
+                        style_rows=[]
+                        for row in rows:
+                            tid=row['Team ID'];opp=next(t for t in hist if t!=tid)
+                            style=shot_style(hist[tid],hist[opp],tid,opp,row['Player ID'])
+                            style_rows.append({'Player':row['Player'],'Team':abbreviations[tid],
+                                               'Opening style':style['style'] or 'Mixed / unavailable',
+                                               'Player opening attempts':f"{style['player_count']}/{style['player_n']}" if style['style'] else '—',
+                                               'Opponent first FG of that type':f"{style['allowed_count']}/{style['allowed_n']}" if style['style'] else '—',
+                                               'Context':style['note']})
+                        st.dataframe(pd.DataFrame(style_rows),hide_index=True,width='stretch')
+                        st.caption('Layups, dunks, hooks, 2PT jumpers and 3PT shots remain separate. Unknown types are excluded. Ties show Mixed rather than inventing a preferred style. No new weight is applied.')
                     for row in rows:
                         row.update({'Game ID':gid,'Matchup':e['shortName'],'Team':abbreviations[row['Team ID']],
                                     'Lineup':'Source confirmed' if all(confirms) else 'Projected',
@@ -248,19 +284,58 @@ def render_model():
                     now=datetime.now(ET).isoformat()
                     clean_rows=df.astype(object).where(pd.notna(df),None).to_dict('records')
                     snap={'version':VERSION,'created_at':now,'basis':market,'settings':{'games':n,'previous_season':prior},'shortlist_rules':SHORTLIST_RULES,'rows':clean_rows}
+                    session_records=st.session_state.setdefault('automatic_pregame_records',{})
+                    for game_id in df['Game ID'].unique():
+                        subset=[r for r in clean_rows if r['Game ID']==game_id]
+                        key=f'{market}:{game_id}'
+                        candidate=make_snapshot(subset,market,utc(now),'This session: loaded matchups and current settings')
+                        candidate['settings']=snap['settings']
+                        kept=keep_pregame(session_records.get(key),candidate,datetime.now(ET))
+                        if kept is not None:session_records[key]=kept
+                    st.caption('Pregame board saved automatically for this open session. Background records use the default settings and are saved separately; downloads remain useful as your own copy.')
                     can_save=all(datetime.now(ET)<utc(t) for t in df['Tip UTC'])
                     st.download_button('Save pregame snapshot for tracking',json.dumps(snap,indent=2,allow_nan=False,default=str),file_name=f'first-basket-{date}.json',mime='application/json',disabled=not can_save)
                     st.download_button('Download board CSV',df.to_csv(index=False),file_name=f'first-basket-{date}.csv',mime='text/csv',disabled=not can_save)
                     st.caption('Save before tip. Snapshots remain on your device; Streamlit disk storage is not treated as permanent tracking.')
 
     with tracking_tab:
-        st.subheader('Settle a saved pregame board')
-        st.write('Upload your saved JSON snapshot after games finish. The tracker preserves the pregame ranks and estimates.')
+        st.subheader('Automatic pregame records')
+        try: archived,archive_index=background_records()
+        except Exception as ex:
+            archived,archive_index={},{}
+            st.warning(f'Background archive unavailable: {type(ex).__name__}')
+        automatic={f'Background archive · {k}':r for k,r in archived.items()}
+        automatic.update({f'This session · {k}':r for k,r in st.session_state.get('automatic_pregame_records',{}).items()})
+        st.caption('Open-session records save your loaded board automatically. Background records use default settings, field-goal settlement and a scheduled capture within two hours of tip. Session records may disappear when disconnected; the background archive is committed to the repository. Scheduling and data delays can cause missed captures.')
+        if archive_index.get('checked_hour_utc'):
+            st.caption(f"Background archive heartbeat: {utc(archive_index['checked_hour_utc']).astimezone(ET):%b %d, %I:%M %p ET} (hourly timestamp).")
+        if archive_index.get('errors'):
+            with st.expander('Background source coverage'):st.write(archive_index['errors'])
+        if automatic:
+            def label(k):
+                r=automatic[k];first=r['rows'][0]
+                return f"{first.get('Matchup',first['Game ID'])} · {r['basis']} · {utc(r['created_at']).astimezone(ET):%b %d %I:%M %p} · {k.split(' · ')[0]}"
+            record_key=st.selectbox('Saved pregame record',list(automatic),format_func=label)
+            record=automatic[record_key]
+            displayed=record
+            if not record.get('settled_rows') and datetime.now(ET)>utc(record['rows'][0]['Tip UTC']):
+                try:displayed=settle(record,live('summary?event='+str(record['rows'][0]['Game ID'])),datetime.now(ET))
+                except Exception:st.info('Final result data is not available yet. The saved pregame ranks are preserved.')
+            st.caption(f"Scope: {record.get('scope','Saved board')}. Lineups: {record['rows'][0].get('Lineup','Unknown')}. This is a prospective record; older results are never used to reconstruct its pregame ranks.")
+            rd=pd.DataFrame(displayed.get('settled_rows',record['rows']))
+            cols=[c for c in ['Overall Rank','Team Rank','Player','Team','Game first %','Shortlisted','Game first hit','Team first hit'] if c in rd.columns]
+            st.dataframe(rd[cols],hide_index=True,width='stretch')
+            if 'Game first hit' in rd.columns:
+                st.metric('Saved game top-pick hit','Yes' if bool(rd.sort_values('Game first %',ascending=False).iloc[0]['Game first hit']) else 'No')
+            st.download_button('Download automatic record',json.dumps(displayed,indent=2,allow_nan=False,default=str),file_name=f"first-basket-auto-{record['rows'][0]['Game ID']}.json",mime='application/json')
+        else:st.info('No automatic records yet. Load games to save this session’s board; scheduled background captures begin prospectively near tip, when data is available.')
+        st.subheader('Upload an earlier snapshot (optional)')
+        st.write('Earlier downloaded files remain supported.')
         upload=st.file_uploader('Pregame snapshot',type='json')
         if upload and st.button('Check final results'):
             try:
                 snap=json.load(upload)
-                if snap.get('version') not in ['1.0.0','1.1.0','1.2.0','1.3.0',VERSION] or snap.get('basis') not in ['Field goal','First points']: raise ValueError('Unsupported snapshot')
+                if snap.get('version') not in ['1.0.0','1.1.0','1.2.0','1.3.0','1.4.0',VERSION] or snap.get('basis') not in ['Field goal','First points']: raise ValueError('Unsupported snapshot')
                 saved_at=utc(snap['created_at']); saved=snap['rows']; result=[]
                 if not saved: raise ValueError('Empty snapshot')
                 for gid in dict.fromkeys(str(r['Game ID']) for r in saved):
@@ -291,7 +366,7 @@ def render_model():
 
     with method_tab:
         st.markdown('''### Reading the board
-**Slate shortlist** chooses up to four players from different loaded games using the highest game-first estimates. Both lineups must be source-confirmed automatically, tip must be in the future, both teams need at least five sampled games, and the player needs three starts, three early shot attempts, at least one opening shot and one team-first scoring hit. These are initial research rules, not trained or validated selection thresholds. A team filter does not change the shortlist. Load all desired games to compare the slate; absent or skipped games cannot contribute candidates. No four-pick minimum is imposed. While the page is open, this section and starting lineups refresh every 60 seconds; current-game summaries are cached for 45 seconds. No unattended update is claimed when the page is closed.
+**Slate shortlist** chooses up to four players from different loaded games using the highest game-first estimates. Both lineups must be source-confirmed automatically, tip must be in the future, both teams need at least five sampled games, and the player needs three starts, three early shot attempts, at least one opening shot and one team-first scoring hit. These are initial research rules, not trained or validated selection thresholds. A team filter does not change the shortlist. Load all desired games to compare the slate; absent or skipped games cannot contribute candidates. No four-pick minimum is imposed. While the page is open, this section and starting lineups refresh every 60 seconds; current-game summaries are cached for 45 seconds. Live-page refresh stops when closed. A separate background archive job can still capture default-setting forecasts, subject to scheduling and source availability.
 
 Optional American odds are entered by you and are stored with the shortlist in the pregame snapshot. They do not affect rank and are not checked for freshness. Missing prices remain blank. The tracker identifies saved shortlist picks and displays settled hits and pending games; neither a shortlist nor displayed model estimates establish profitability.
 
@@ -299,7 +374,7 @@ Optional American odds are entered by you and are stored with the shortlist in t
 
 **Opening shot %** is the share of sampled team games in which the player took that team's first field-goal attempt. **Early FG %** is actual shooting in the opening three minutes of the first quarter. **Starts** counts starts within that team's sample, not career starts.
 
-### Transparent v1.2 formula
+### Forecast formula and context
 The team's game-first rate is shrunk toward 50% with ten prior games. Its matchup chance averages that rate and the opponent's failure-to-score-first rate.
 
 Within each team, the model uses six buckets: the five selected players plus all other players. Each bucket receives one prior first-scoring event and one prior opening attempt. A player's team-first estimate is **60% smoothed first-scoring share + 40% normalized opening-shot share × smoothed early FG conversion**. Conversion uses a 45% prior with ten attempts. Game-first estimate = team-first estimate × team game-first chance.

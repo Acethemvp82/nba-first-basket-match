@@ -1,0 +1,42 @@
+name: First Basket pregame archive
+on:
+  schedule:
+    - cron: '4,14,24,34,44,54 * * * *'
+  workflow_dispatch:
+  push:
+    paths:
+      - capture.py
+      - archive.py
+      - model.py
+      - .github/workflows/first-basket-archive.yml
+permissions:
+  contents: write
+concurrency:
+  group: first-basket-archive
+  cancel-in-progress: false
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/first-basket
+          key: first-basket-history-${{ github.run_id }}
+          restore-keys: first-basket-history-
+      - name: Capture forecasts and settle completed games
+        run: python capture.py
+      - name: Save public model records
+        run: |
+          git config user.name "First Basket archive"
+          git config user.email "first-basket-archive@users.noreply.github.com"
+          git add data
+          if ! git diff --cached --quiet; then
+            git commit -m "Update automatic First Basket records"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
