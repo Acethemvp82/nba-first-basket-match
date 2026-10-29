@@ -33,7 +33,7 @@ Game first and team first are separate estimates. Field-goal settlement excludes
 
 The model combines smoothed first-scoring history (60%) and opening-shot share times early conversion (40%). Bounded position adjustments distinguish first-shot attempts allowed from first made field goals allowed. Tip estimates are team-history context only, not confirmed individual-jumper probabilities. G/F/C groups are used without inventing detailed positions. Missing or small position samples are neutral. Unlisted-player probability is retained. See How it works for the full formula and limitations.
 
-Green means a top-two team research candidate with at least 15 sampled games and eight player starts; amber means limited history. Colors and ranks are not proven betting edges.
+Green marks the top eligible candidate in a game only when both lineups are source-confirmed, each team has at least 15 sampled games, and the player has eight starts. Amber marks limited history; gray marks awaiting starters; other rows stay navy. The same rules and readable white text apply to both the shortlist and full board. Color labels remain visible and do not change estimates, ranks or selection rules. Colors and ranks are not proven betting edges.
 
 ## Automatic pregame records
 
