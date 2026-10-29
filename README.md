@@ -1,5 +1,11 @@
 # First Basket Match
 
+## Version 1.3 — Slate shortlist
+
+After loading matchups, the board displays up to four research candidates from different games above the full rankings. Both teams' lineups must be confirmed by you. Each team needs at least five sampled games; the player needs at least three starts, three early shot attempts, one team opening-shot attempt, and one team-first scoring hit. Candidates must be pregame. Eligible players are sorted by model game-first estimate, with at most one per game; fewer than four are shown when needed. These are initial research rules, not backtested profitability thresholds. All desired games must be loaded to compare the slate. Team filters do not affect the shortlist.
+
+Enter your current sportsbook odds in the optional section; prices remain blank until supplied and do not change the selections. The pregame snapshot and CSV retain each shortlist flag and entered price. Results tracker reports hits among settled shortlist picks and shows how many await final data. Existing versions 1.0–1.2 remain supported. A changed starter selection requires a new lineup confirmation.
+
 Version 1.2 adds a **Why ranked** explanation per player and **first made field goal allowed by position** in the existing opening-matchup details. Made-FG allowance is always separate from shot attempts and excludes free throws, including in first-points mode. Observed counts, percentages and usable sample sizes are shown. A smoothed opponent position lift affects only the 60% first-scoring component, capped at 0.85–1.15 before normalization, and requires five usable games. Missing positions and smaller samples stay neutral. Prior 1.0 and 1.1 tracker snapshots remain supported. These adjustments are experimental and have not demonstrated improved accuracy.
 
 Separate NBA first-basket Streamlit research app. Uses free ESPN data; no API key.

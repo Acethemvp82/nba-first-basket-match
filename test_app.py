@@ -18,7 +18,7 @@ class AppTest(unittest.TestCase):
         data=fixture();data['header']['competitions'][0]['date']=past['date']
         def fake(path):
             if path.startswith('scoreboard'):return {'events':[future],'season':{'year':2027}}
-            if '/schedule?' in path:return {'events':[past]}
+            if '/schedule?' in path:return {'events':[{**past,'id':f'g{i}','date':(now-timedelta(days=i+1)).isoformat()} for i in range(5)]}
             if path.startswith('summary'):return deepcopy(data)
             if path.endswith('/roster'):
                 tid=path.split('/')[1]
@@ -35,6 +35,24 @@ class AppTest(unittest.TestCase):
             self.assertTrue(board['Why ranked'].str.contains('Limited history').all())
             details=next(d.value for d in at.dataframe if 'Opponent first FG allowed count' in d.value.columns)
             self.assertTrue((details['Opponent first FG games']==0).all())
+            self.assertFalse(any('Pick' in d.value.columns for d in at.dataframe))
+            for box in at.checkbox:
+                if box.label=='I verified these five starters and availability':box.check()
+            at.run()
+            self.assertFalse(at.exception)
+            shortlist=next(d.value for d in at.dataframe if 'Pick' in d.value.columns)
+            self.assertEqual(len(shortlist),1)
+            self.assertEqual(shortlist.iloc[0]['Player'],'A2')
+            price=next(x for x in at.number_input if x.label.startswith('American odds —'))
+            self.assertIsNone(price.value)
+            price.set_value(650).run()
+            self.assertFalse(at.exception)
+            self.assertEqual(next(d.value for d in at.dataframe if 'Pick' in d.value.columns).iloc[0]['Your odds'],'+650')
+            # A changed lineup must require a fresh user confirmation.
+            lineup=next(x for x in at.multiselect if x.label=='Select five starters')
+            vals=list(lineup.value);vals[-1]='A6'
+            lineup.set_value(vals).run()
+            self.assertFalse(any('Pick' in d.value.columns for d in at.dataframe))
             next(r for r in at.radio if r.label=='Settlement basis').set_value('First points').run()
             next(b for b in at.button if b.label=='Load / update prediction board').click().run()
             self.assertFalse(at.exception)

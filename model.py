@@ -5,7 +5,32 @@ from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 
 BASE = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/'
-VERSION = '1.2.0'
+VERSION = '1.3.0'
+
+SHORTLIST_RULES = {'min_team_games':5,'min_starts':3,'min_early_attempts':3,'max_picks':4}
+
+def select_shortlist(rows, now):
+    """Research screen, not a fitted edge threshold. One candidate per game."""
+    eligible=[]
+    for r in rows:
+        try:
+            if (r.get('Lineup')=='User confirmed' and utc(r['Tip UTC'])>now
+                    and min(r['Sample'],r['Opponent sample'])>=SHORTLIST_RULES['min_team_games']
+                    and r['Starts']>=SHORTLIST_RULES['min_starts']
+                    and r['Early FGA']>=SHORTLIST_RULES['min_early_attempts']
+                    and r['Opening shot %']>0 and r['Team first hits']>0
+                    and 0<r['Game first %']<100):
+                eligible.append(r)
+        except (KeyError,TypeError,ValueError):
+            continue
+    eligible.sort(key=lambda r:(-r['Game first %'],str(r['Game ID']),str(r['Player ID'])))
+    selected=[]; used_games=set()
+    for r in eligible:
+        gid=str(r['Game ID'])
+        if gid in used_games: continue
+        used_games.add(gid);selected.append(dict(r))
+        if len(selected)==SHORTLIST_RULES['max_picks']: break
+    return selected
 
 def position_group(position):
     return {'PG':'G','SG':'G','G':'G','SF':'F','PF':'F','F':'F','C':'C'}.get(position)
@@ -194,6 +219,7 @@ def forecast(histories, selected, metadata):
             profile=context[tid]['basket_allowed']
             rows.append({'Player ID': pid, 'Player': metadata[tid][pid]['name'], 'Team ID': tid,
                          'Position': metadata[tid][pid]['position'], 'Sample': n,
+                         'Opponent sample':len(histories[next(t for t in tids if t!=tid)]),
                          'Shot matchup':shot_label, 'Basket matchup':basket_label,
                          'Why ranked':rank_reason(attempts[pid],n,starts,shot_label,basket_label),
                          'Opponent first FG position hits':profile['counts'].get(group,0) if group and profile['n'] else None,

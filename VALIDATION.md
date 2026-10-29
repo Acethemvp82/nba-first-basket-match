@@ -1,5 +1,9 @@
 # Validation — October 23, 2026
 
+## Version 1.3 — October 29, 2026
+
+Added a distinct-game shortlist with transparent minimum samples, user-confirmed lineups, pregame eligibility, manually entered prices, and snapshot tracking flags. Tests verify ranking and four-game cap, exclusion of insufficient history and started games, no forced filler picks, and UI behavior for confirmations, blank/entered odds, and changed lineups. Forecast weights and probabilities are unchanged by the shortlist feature. This validation does not establish betting accuracy or profitability.
+
 ## Version 1.2 upgrade
 
 Thirteen model and Streamlit checks passed. New coverage separates free throws, missed opening attempts, and the first made field goal; verifies directional opponent position counts and observed percentages; checks minimum samples and unknown-position neutrality; preserves game probability mass after both position adjustments; and verifies per-player explanations in the rendered board. A real historical summary also parsed both teams' first made field goals and usable allowance profiles. This is implementation validation, not evidence of increased betting accuracy.

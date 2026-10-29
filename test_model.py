@@ -1,7 +1,7 @@
 import unittest
 from copy import deepcopy
 from datetime import datetime, timezone
-from model import parse_game, forecast, prior_events, implied, opening_context, shot_adjustment, position_profile, basket_adjustment, rank_reason
+from model import parse_game, forecast, prior_events, implied, opening_context, shot_adjustment, position_profile, basket_adjustment, rank_reason, select_shortlist
 
 def fixture():
     def play(seq,team,pid,made,points,typ='shot'):
@@ -15,6 +15,25 @@ def fixture():
                 {'athlete':{'id':t+str(i),'displayName':t+str(i)},'starter':True} for i in range(1,6)]}]} for t in ['A','B']]}}
 
 class ModelTests(unittest.TestCase):
+    def shortlist_row(self,game='1',player='1',chance=15):
+        return {'Game ID':game,'Player ID':player,'Lineup':'User confirmed','Tip UTC':'2026-10-30T23:00Z','Sample':8,'Opponent sample':8,'Starts':5,'Early FGA':9,'Opening shot %':25,'Team first hits':2,'Game first %':chance}
+    def test_shortlist_distinct_games_and_best_candidate(self):
+        now=datetime(2026,10,29,tzinfo=timezone.utc)
+        rows=[self.shortlist_row(str(i),str(i),10+i) for i in range(6)]
+        rows.append(self.shortlist_row('5','alternate',25))
+        selected=select_shortlist(rows,now)
+        self.assertEqual(len(selected),4)
+        self.assertEqual(len({r['Game ID'] for r in selected}),4)
+        self.assertEqual(selected[0]['Player ID'],'alternate')
+        self.assertNotIn('Shortlisted',rows[0])
+    def test_shortlist_withholds_weak_unconfirmed_and_started(self):
+        now=datetime(2026,10,29,tzinfo=timezone.utc)
+        for key,bad in [('Lineup','Projected'),('Sample',4),('Opponent sample',4),('Starts',2),('Early FGA',2),('Opening shot %',0),('Team first hits',0),('Tip UTC','2026-10-29T00:00Z')]:
+            with self.subTest(key=key):
+                row=self.shortlist_row();row[key]=bad
+                self.assertEqual(select_shortlist([row],now),[])
+        self.assertEqual(len(select_shortlist([self.shortlist_row()],now)),1)
+        self.assertEqual(select_shortlist([{}],now),[])
     def test_basket_allowance_uses_made_fg_not_attempt_or_ft(self):
         d=fixture()
         for block in d['boxscore']['players']:
