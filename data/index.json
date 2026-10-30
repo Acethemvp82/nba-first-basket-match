@@ -1,6 +1,62 @@
 {
-  "checked_hour_utc": "2026-10-30T19:00:00+00:00",
+  "checked_hour_utc": "2026-10-30T23:00:00+00:00",
   "records": [
+    {
+      "path": "pregame/2026-10-30-401909284.json",
+      "date": "2026-10-30",
+      "game_id": "401909284",
+      "matchup": "LAC @ MIN",
+      "created_at": "2026-10-30T23:29:30.654868+00:00",
+      "settled": false
+    },
+    {
+      "path": "pregame/2026-10-30-401909283.json",
+      "date": "2026-10-30",
+      "game_id": "401909283",
+      "matchup": "HOU @ DAL",
+      "created_at": "2026-10-30T23:29:30.654868+00:00",
+      "settled": false
+    },
+    {
+      "path": "pregame/2026-10-30-401909282.json",
+      "date": "2026-10-30",
+      "game_id": "401909282",
+      "matchup": "IND @ MIA",
+      "created_at": "2026-10-30T23:29:30.654868+00:00",
+      "settled": false
+    },
+    {
+      "path": "pregame/2026-10-30-401909281.json",
+      "date": "2026-10-30",
+      "game_id": "401909281",
+      "matchup": "ORL @ TOR",
+      "created_at": "2026-10-30T23:29:30.654868+00:00",
+      "settled": false
+    },
+    {
+      "path": "pregame/2026-10-30-401909280.json",
+      "date": "2026-10-30",
+      "game_id": "401909280",
+      "matchup": "NY @ PHI",
+      "created_at": "2026-10-30T23:29:30.654868+00:00",
+      "settled": false
+    },
+    {
+      "path": "pregame/2026-10-30-401909279.json",
+      "date": "2026-10-30",
+      "game_id": "401909279",
+      "matchup": "DET @ BKN",
+      "created_at": "2026-10-30T23:29:30.654868+00:00",
+      "settled": false
+    },
+    {
+      "path": "pregame/2026-10-30-401909278.json",
+      "date": "2026-10-30",
+      "game_id": "401909278",
+      "matchup": "CHI @ BOS",
+      "created_at": "2026-10-30T23:29:30.654868+00:00",
+      "settled": false
+    },
     {
       "path": "pregame/2026-10-29-401909894.json",
       "date": "2026-10-29",
