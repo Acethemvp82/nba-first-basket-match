@@ -1,5 +1,5 @@
 {
-  "checked_hour_utc": "2026-10-30T02:00:00+00:00",
+  "checked_hour_utc": "2026-10-30T08:00:00+00:00",
   "records": [
     {
       "path": "pregame/2026-10-29-401909894.json",
@@ -15,7 +15,7 @@
       "game_id": "401909893",
       "matchup": "CLE @ ATL",
       "created_at": "2026-10-29T22:58:00.012897+00:00",
-      "settled": false
+      "settled": true
     }
   ],
   "errors": []
