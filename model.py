@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 
 BASE = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/'
-VERSION = '1.5.0'
+VERSION = '1.6.0'
 
 def shot_type(play):
     if not is_fg(play): return None
@@ -326,3 +326,39 @@ def implied(american):
     if abs(american) < 100:
         raise ValueError('American odds must be at least +100 or at most -100')
     return 100/(american+100) if american > 0 else -american/(-american+100)
+
+
+def simulate_first_basket(rows, trials=10000, seed=42):
+    """Sample one first scorer per trial from a single game's forecast.
+
+    This visualizes existing estimates, not a new possession model or confidence
+    interval. Unlisted players retain all residual probability mass.
+    """
+    import math
+    import random
+    if isinstance(trials, bool) or not isinstance(trials, int) or not 1000 <= trials <= 100000:
+        raise ValueError('Choose between 1,000 and 100,000 simulations')
+    if not rows or len({str(r['Game ID']) for r in rows}) != 1:
+        raise ValueError('Simulation requires one complete matchup')
+    identities = [(str(r['Team ID']), str(r['Player ID'])) for r in rows]
+    if len(set(identities)) != len(rows):
+        raise ValueError('Duplicate players in simulation')
+    weights = [float(r['Game first %']) / 100 for r in rows]
+    if any(not math.isfinite(p) or not 0 <= p <= 1 for p in weights):
+        raise ValueError('Invalid model probability')
+    total = math.fsum(weights)
+    if total > 1 + 1e-10:
+        raise ValueError('Model probabilities exceed 100%')
+    weights.append(max(0.0, 1 - total))
+    counts = Counter(random.Random(seed).choices(range(len(weights)), weights=weights, k=trials))
+    output = []
+    for i, row in enumerate(rows):
+        output.append({'Player':row['Player'], 'Team':row['Team'],
+                       'Research tier':row.get('Research tier','Research'),
+                       'Model %':weights[i]*100, 'Simulated first baskets':counts[i],
+                       'Simulated %':counts[i]/trials*100})
+    output.append({'Player':'Other / unlisted players', 'Team':'Both teams',
+                   'Research tier':'Research', 'Model %':weights[-1]*100,
+                   'Simulated first baskets':counts[len(rows)],
+                   'Simulated %':counts[len(rows)]/trials*100})
+    return sorted(output, key=lambda r:(-r['Model %'],r['Player'],r['Team']))

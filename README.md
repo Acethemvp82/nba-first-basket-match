@@ -58,3 +58,7 @@ python -m unittest -v
 ```
 
 Coverage includes free-throw vs field-goal parsing, chronological events, exact pregame source-lineup validation, probability mass, directional position allowances, missing data, minimum samples, distinct-game shortlist selection, source-pending/source-confirmed UI behavior, manual prices and settlement-basis switching.
+
+
+## First basket simulator (v1.6)
+Select a loaded matchup and 10,000, 50,000 or 100,000 simulated games. The simulator draws exactly one first scorer from the current model probabilities, retaining other/unlisted players, with fixed seed 42. It follows the selected settlement and labels projected starters. Colored results include model probability, simulated count and frequency, plus CSV export. Rankings and shortlist rules are unchanged. This samples the existing estimates; it is not a possession model, calibration, an accuracy improvement or a confidence interval.

@@ -40,6 +40,14 @@ class AppTest(unittest.TestCase):
             self.assertFalse(at.exception)
             self.assertEqual(next(m for m in at.metric if m.label=='Players ranked').value,'10')
             self.assertTrue(at.session_state['automatic_pregame_records'])
+            sim=next(d.value for d in at.dataframe if 'Simulated first baskets' in d.value.columns)
+            self.assertEqual(len(sim),11)
+            self.assertEqual(int(sim['Simulated first baskets'].sum()),10000)
+            self.assertTrue((sim[sim['Player']!='Other / unlisted players']['Research tier']=='Awaiting starters').all())
+            next(x for x in at.selectbox if x.label=='Simulated games').set_value(50000).run()
+            self.assertFalse(at.exception)
+            sim=next(d.value for d in at.dataframe if 'Simulated first baskets' in d.value.columns)
+            self.assertEqual(int(sim['Simulated first baskets'].sum()),50000)
             board=next(d.value for d in at.dataframe if 'Research tier' in d.value.columns)
             self.assertTrue((board['Research tier']=='Awaiting starters').all())
             self.assertTrue(board['Why ranked'].str.contains('Limited history').all())
@@ -69,5 +77,7 @@ class AppTest(unittest.TestCase):
             next(b for b in at.button if b.label=='Load / update prediction board').click().run()
             self.assertFalse(at.exception)
             self.assertEqual(next(m for m in at.metric if m.label=='Players ranked').value,'10')
+            self.assertTrue(any('First points' in c.value and 'simulated games' in c.value for c in at.caption))
 
 if __name__=='__main__':unittest.main()
+

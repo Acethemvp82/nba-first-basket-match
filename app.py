@@ -8,9 +8,9 @@ import streamlit as st
 import importlib
 import model as _model
 # Streamlit can retain an already-imported module during a source update.
-if getattr(_model, 'VERSION', None) != '1.5.0':
+if getattr(_model, 'VERSION', None) != '1.6.0':
     importlib.reload(_model)
-from model import fetch, competitors, team_id, utc, prior_events, parse_game, forecast, implied, VERSION, opening_context, select_shortlist, SHORTLIST_RULES, source_starters, tip_conversion, jumper_records, shot_style, position_summary
+from model import fetch, competitors, team_id, utc, prior_events, parse_game, forecast, implied, VERSION, opening_context, select_shortlist, SHORTLIST_RULES, source_starters, tip_conversion, jumper_records, shot_style, position_summary, simulate_first_basket
 from archive import snapshot as make_snapshot, keep_pregame, settle
 
 ET = ZoneInfo('America/New_York')
@@ -283,6 +283,19 @@ def render_model():
                     st.caption('Green = top eligible game candidate with adequate history. Amber = limited history. Gray = awaiting source-confirmed starters. Other rows stay navy. Labels explain each color; overall ranks cover loaded matchups only.')
                     st.dataframe(pd.DataFrame(residuals),hide_index=True,width='stretch')
                     st.caption('Unlisted-player probability is retained, so the ten listed players are not forced to total 100%.')
+                    with st.expander('First basket simulator',expanded=True):
+                        st.caption('See how the current model estimates play out over repeated simulated games. Each simulation produces exactly one game-first scorer under your selected settlement basis.')
+                        matchups={str(r['Game ID']):r['Matchup'] for r in all_rows}
+                        sim_gid=st.selectbox('Simulator matchup',list(matchups),format_func=matchups.get)
+                        trials=st.selectbox('Simulated games',[10000,50000,100000],format_func=lambda v:f'{v:,}',key='sim-trials')
+                        sim_rows=df[df['Game ID'].astype(str)==sim_gid].to_dict('records')
+                        if any(r['Lineup']!='Source confirmed' for r in sim_rows):
+                            st.info('Projected starters: simulation updates automatically when source-confirmed lineups arrive.')
+                        simulation=pd.DataFrame(simulate_first_basket(sim_rows,trials=trials))
+                        st.caption(f'{matchups[sim_gid]} • {market} • {trials:,} simulated games. Ordered by model estimate so random variation does not change research priority.')
+                        st.dataframe(simulation.style.apply(priority_colors,axis=1).format({'Model %':'{:.1f}','Simulated %':'{:.1f}'}),hide_index=True,width='stretch')
+                        st.caption('Other / unlisted players includes everyone outside the ten listed starters. Fixed random seed keeps identical inputs stable on refresh. More simulations reduce sampling noise; they do not improve the model or measure uncertainty in its estimates.')
+                        st.download_button('Download simulation CSV',simulation.assign(Matchup=matchups[sim_gid],Basis=market,Simulations=trials,Seed=42).to_csv(index=False),file_name=f'first-basket-simulation-{sim_gid}.csv',mime='text/csv')
                     st.subheader('Compare a sportsbook price')
                     lookup={i:f"{r['Player']} · {r['Team']}" for i,r in df.iterrows()}
                     idx=st.selectbox('Player',list(lookup),format_func=lookup.get)
@@ -348,7 +361,7 @@ def render_model():
         if upload and st.button('Check final results'):
             try:
                 snap=json.load(upload)
-                if snap.get('version') not in ['1.0.0','1.1.0','1.2.0','1.3.0','1.4.0',VERSION] or snap.get('basis') not in ['Field goal','First points']: raise ValueError('Unsupported snapshot')
+                if snap.get('version') not in ['1.0.0','1.1.0','1.2.0','1.3.0','1.4.0','1.5.0',VERSION] or snap.get('basis') not in ['Field goal','First points']: raise ValueError('Unsupported snapshot')
                 saved_at=utc(snap['created_at']); saved=snap['rows']; result=[]
                 if not saved: raise ValueError('Empty snapshot')
                 for gid in dict.fromkeys(str(r['Game ID']) for r in saved):
@@ -387,6 +400,9 @@ Optional American odds are entered by you and are stored with the shortlist in t
 
 **Opening shot %** is the share of sampled team games in which the player took that team's first field-goal attempt. **Early FG %** is actual shooting in the opening three minutes of the first quarter. **Starts** counts starts within that team's sample, not career starts.
 
+### Simulator
+The simulator draws one game-first scorer per simulated game from the current board probabilities and keeps the unlisted-player probability. It follows the selected field-goal or first-points settlement and the displayed starter status. It does not simulate individual possessions, foul rates, jump balls or changing lineups. A fixed seed makes repeated runs stable; the displayed percentages are frequencies under the model, not measured accuracy or confidence intervals. It does not change rankings or shortlist eligibility.
+
 ### Forecast formula and context
 The team's game-first rate is shrunk toward 50% with ten prior games. Its matchup chance averages that rate and the opponent's failure-to-score-first rate.
 
@@ -415,3 +431,4 @@ No confirmed jumper lineup, automatic injury adjustment, sportsbook odds feed, g
 
 
 render_model()
+
