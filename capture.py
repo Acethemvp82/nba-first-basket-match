@@ -37,7 +37,7 @@ def game_rows(e,year,client):
         schedule=client.get(f'teams/{tid}/schedule?season={year}&seasontype=2')
         events=[x for x in schedule.get('events',[]) if int(x.get('season',{}).get('year',year))==year and int(x.get('seasonType',{}).get('type',2))==2]
         games=[]
-        for old in prior_events(events,utc(e['date']),20):
+        for old in prior_events(events,utc(e['date']),15):
             try:games.append(parse_game(client.get('summary?event='+old['id']), 'First points'))
             except Exception:continue
         if not games:raise ValueError('Missing historical PBP')
@@ -93,10 +93,10 @@ def run():
     for gid in sorted({r['Game ID'] for r in rows}):
         subset=[r for r in rows if r['Game ID']==gid]
         date=utc(subset[0]['Tip UTC']).astimezone(ET).date().isoformat()
-        relative=f'pregame/{date}-{gid}-first-points.json';path=DATA/relative
+        relative=f'pregame/{date}-{gid}-first-points-last15.json';path=DATA/relative
         previous=json.loads(path.read_text()) if path.exists() else None
-        candidate=snapshot(subset,'First points',captured,'Automatic archive: games within two hours of tip; 20 current-season games maximum')
-        candidate['settings']={'games':20,'previous_season':False}
+        candidate=snapshot(subset,'First points',captured,'Automatic archive: games within two hours of tip; 15 current-season games maximum')
+        candidate['settings']={'games':15,'previous_season':False}
         kept=keep_pregame(previous,candidate,captured)
         if kept is not None and kept!=previous:write(path,kept)
         if kept is not None:entries[relative]={'path':relative,'date':date,'game_id':gid,'matchup':subset[0]['Matchup'],'created_at':kept['created_at'],'settled':bool(kept.get('settled_at'))}
@@ -118,4 +118,5 @@ def run():
     if errors:print('\n'.join(errors))
 
 if __name__=='__main__':run()
+
 
