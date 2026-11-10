@@ -74,3 +74,30 @@ def tracking_summary(records, basis='First points'):
                        'History window':record.get('settings',{}).get('games'),
                        'Saved at':record['created_at']})
     return sorted(result,key=lambda r:(r['Tip UTC'],r['Game ID']),reverse=True)
+
+
+def live_first_basket(summary, event_id):
+    """Identify first points without requiring a final game or rebuilding ranks."""
+    comp=summary.get('header',{}).get('competitions',[{}])[0]
+    if str(comp.get('id'))!=str(event_id):return None
+    plays=sorted(summary.get('plays',[]),key=lambda p:int(p.get('sequenceNumber',0)))
+    first=next((p for p in plays if p.get('scoringPlay') and p.get('scoreValue',0)>0),None)
+    if not first or first.get('period',{}).get('number')!=1:return None
+    # Cumulative score must prove no earlier points are missing from the feed.
+    try:
+        if int(first['homeScore'])+int(first['awayScore'])!=int(first['scoreValue']):return None
+    except (KeyError,ValueError,TypeError):return None
+    participants=first.get('participants',[])
+    if not participants:return None
+    pid=str(participants[0].get('athlete',{}).get('id',''))
+    tid=str(first.get('team',{}).get('id',''))
+    for block in summary.get('boxscore',{}).get('players',[]):
+        if str(block.get('team',{}).get('id'))!=tid:continue
+        for group in block.get('statistics',[]):
+            for player in group.get('athletes',[]):
+                athlete=player.get('athlete',{})
+                if str(athlete.get('id'))==pid and athlete.get('displayName'):
+                    return {'Player':athlete['displayName'],'Player ID':pid,'Team ID':tid,
+                            'Clock':first.get('clock',{}).get('displayValue',''),
+                            'Method':'Free throw' if first['scoreValue']==1 else f"{first['scoreValue']}-pointer"}
+    return None
