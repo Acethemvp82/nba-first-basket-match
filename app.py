@@ -11,7 +11,10 @@ import model as _model
 if getattr(_model, 'VERSION', None) != '1.6.0':
     importlib.reload(_model)
 from model import fetch, competitors, team_id, utc, prior_events, parse_game, forecast, implied, VERSION, opening_context, select_shortlist, SHORTLIST_RULES, source_starters, tip_conversion, jumper_records, shot_style, position_summary, simulate_first_basket
-from archive import snapshot as make_snapshot, keep_pregame, settle
+import archive as _archive
+if not hasattr(_archive, 'tracking_summary'):
+    importlib.reload(_archive)
+from archive import snapshot as make_snapshot, keep_pregame, settle, tracking_summary
 
 ET = ZoneInfo('America/New_York')
 st.set_page_config(page_title='First Basket Match', page_icon='🏀', layout='wide')
@@ -338,6 +341,31 @@ def render_model():
             st.caption(f"Background archive heartbeat: {utc(archive_index['checked_hour_utc']).astimezone(ET):%b %d, %I:%M %p ET} (hourly timestamp).")
         if archive_index.get('errors'):
             with st.expander('Background source coverage'):st.write(archive_index['errors'])
+        st.subheader('First Basket results tracker')
+        source=st.selectbox('Tracker records',['Background archive','This session'],index=0 if archived else 1)
+        pool=archived if source=='Background archive' else st.session_state.get('automatic_pregame_records',{})
+        tracker_basis=st.selectbox('Saved record type',['First points','Field goal'],format_func=lambda b:'First Basket (includes free throws)' if b=='First points' else 'Older field-goal records')
+        summary=tracking_summary(list(pool.values()),tracker_basis)
+        if summary:
+            for r in summary:r['Date (ET)']=utc(r['Tip UTC']).astimezone(ET).date().isoformat()
+            dates=sorted({r['Date (ET)'] for r in summary},reverse=True)
+            chosen_date=st.selectbox('Results date',['All saved dates']+dates,index=1)
+            shown=[r for r in summary if chosen_date=='All saved dates' or r['Date (ET)']==chosen_date]
+            finals=[r for r in shown if r['Status']=='Final']
+            short=[r for r in finals if r['Shortlist hit'] is not None]
+            a,b,c,d=st.columns(4)
+            a.metric('Games settled',len(finals))
+            b.metric('Top-pick hits',f"{sum(r['Top pick hit'] for r in finals)} / {len(finals)}")
+            c.metric('Top-3 coverage',f"{sum(r['Top 3 hit'] for r in finals)} / {len(finals)}")
+            d.metric('Shortlist hits',f"{sum(r['Shortlist hit'] for r in short)} / {len(short)}")
+            view=pd.DataFrame(shown)
+            cols=['Date (ET)','Matchup','Status','First scorer','Pregame game rank','Pregame team rank','Pregame overall rank','Scorer model %','Top pick','Top pick hit','Top 3 hit','Shortlist pick','Shortlist hit','Lineup','History window']
+            st.dataframe(view[cols].style.format({'Scorer model %':'{:.1f}','Pregame game rank':'{:.0f}','Pregame team rank':'{:.0f}','Pregame overall rank':'{:.0f}','History window':'{:.0f}'},na_rep='—'),hide_index=True,width='stretch')
+            st.caption(f"{len(shown)-len(finals)} pending game(s). Top-3 coverage means the scorer was among three candidates, not three winning bets. Ranks and estimates come only from saved pregame records. Overall rank applies to that record’s captured slate. Projected lineups remain labeled. Games without an eligible shortlist pick are excluded from the shortlist denominator. Sources and settlement types are kept separate; latest pregame record per game is counted once.")
+            st.download_button('Download results tracker CSV',view.to_csv(index=False),file_name='first-basket-tracker.csv',mime='text/csv')
+        else:
+            st.info('No saved records for this source and settlement yet. New First Basket forecasts save automatically near tip; completed games are settled by the background job. Older field-goal records can be viewed separately.')
+        st.caption('Future background captures use Last 15 and include free throws. Your open-session records preserve your chosen Last 5 / 10 / 15 setting. Missed pregame captures cannot be reconstructed after the game. Pending results refresh while the page is open and the archive is available.')
         if automatic:
             def label(k):
                 r=automatic[k];first=r['rows'][0]
@@ -432,5 +460,6 @@ No confirmed jumper lineup, automatic injury adjustment, sportsbook odds feed, g
 
 
 render_model()
+
 
 
