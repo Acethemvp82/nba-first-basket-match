@@ -38,7 +38,7 @@ def game_rows(e,year,client):
         events=[x for x in schedule.get('events',[]) if int(x.get('season',{}).get('year',year))==year and int(x.get('seasonType',{}).get('type',2))==2]
         games=[]
         for old in prior_events(events,utc(e['date']),20):
-            try:games.append(parse_game(client.get('summary?event='+old['id'])))
+            try:games.append(parse_game(client.get('summary?event='+old['id']), 'First points'))
             except Exception:continue
         if not games:raise ValueError('Missing historical PBP')
         hist[tid]=games
@@ -52,7 +52,7 @@ def game_rows(e,year,client):
     abbr={team_id(c):c['team']['abbreviation'] for c in competitors(e)}
     for r in rows:
         r.update({'Game ID':str(e['id']),'Matchup':e['shortName'],'Team':abbr[r['Team ID']],
-                  'Tip UTC':e['date'],'Basis':'Field goal','Lineup':'Source confirmed' if all(flags) else 'Projected',
+                  'Tip UTC':e['date'],'Basis':'First points','Lineup':'Source confirmed' if all(flags) else 'Projected',
                   'Lineup source':'ESPN current-game flags' if all(flags) else 'Latest historical starters; awaiting ESPN',
                   'Listed American odds':None})
     return rows
@@ -93,9 +93,9 @@ def run():
     for gid in sorted({r['Game ID'] for r in rows}):
         subset=[r for r in rows if r['Game ID']==gid]
         date=utc(subset[0]['Tip UTC']).astimezone(ET).date().isoformat()
-        relative=f'pregame/{date}-{gid}.json';path=DATA/relative
+        relative=f'pregame/{date}-{gid}-first-points.json';path=DATA/relative
         previous=json.loads(path.read_text()) if path.exists() else None
-        candidate=snapshot(subset,'Field goal',captured,'Automatic archive: games within two hours of tip; 20 current-season games maximum')
+        candidate=snapshot(subset,'First points',captured,'Automatic archive: games within two hours of tip; 20 current-season games maximum')
         candidate['settings']={'games':20,'previous_season':False}
         kept=keep_pregame(previous,candidate,captured)
         if kept is not None and kept!=previous:write(path,kept)
@@ -118,3 +118,4 @@ def run():
     if errors:print('\n'.join(errors))
 
 if __name__=='__main__':run()
+
