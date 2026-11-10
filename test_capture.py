@@ -14,6 +14,8 @@ class CaptureTests(unittest.TestCase):
         event={'id':'g','date':tip.isoformat(),'shortName':'A @ B','status':{'type':{'state':'pre'}},
                'competitions':[{'competitors':[{'team':{'id':t,'abbreviation':t}} for t in ['A','B']]}]}
         historical=fixture();state={'final':False}
+        extra=deepcopy(historical['plays'][2]);extra['sequenceNumber']='2';extra['participants'][0]['athlete']['id']='A1'
+        historical['plays'].append(extra)
         def get(path):
             if path.startswith('scoreboard'):
                 return {'events':[] if state['final'] else [event],'season':{'year':2027}}
@@ -40,6 +42,11 @@ class CaptureTests(unittest.TestCase):
                 path=data/index['records'][0]['path']
                 original=json.loads(path.read_text())
                 self.assertEqual(len(original['rows']),10)
+                self.assertEqual(original['basis'],'First points')
+                self.assertTrue(all(r['Basis']=='First points' for r in original['rows']))
+                self.assertTrue(path.name.endswith('-first-points.json'))
+                self.assertEqual(next(r for r in original['rows'] if r['Player ID']=='A1')['Team first hits'],5)
+                self.assertEqual(next(r for r in original['rows'] if r['Player ID']=='A2')['Team first hits'],0)
                 self.assertTrue(any(r['Shortlisted'] for r in original['rows']))
                 state['final']=True
                 # Move the worker clock beyond tip without changing the saved forecast.
@@ -53,3 +60,4 @@ class CaptureTests(unittest.TestCase):
                 self.assertTrue(json.loads((data/'index.json').read_text())['records'][0]['settled'])
 
 if __name__=='__main__':unittest.main()
+
