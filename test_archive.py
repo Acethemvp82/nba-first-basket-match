@@ -68,3 +68,22 @@ class TrackingSummaryTests(unittest.TestCase):
         self.assertEqual(row['First scorer'],'Bench scorer');self.assertIsNone(row['Pregame game rank'])
         r['created_at']='2026-10-21T00:00Z'
         self.assertEqual(tracking_summary([r]),[])
+
+
+class LiveScorerTests(unittest.TestCase):
+    def test_live_first_points_includes_ft_before_final(self):
+        from archive import live_first_basket
+        d=fixture();d['header']['competitions'][0]['status']['type']={'state':'in','completed':False}
+        for p in d['plays']:
+            if p['sequenceNumber']=='1':p.update({'homeScore':1,'awayScore':0})
+        result=live_first_basket(d,'g')
+        self.assertEqual(result['Player'],'A1');self.assertEqual(result['Method'],'Free throw')
+        self.assertIsNone(live_first_basket(d,'wrong-game'))
+        d['plays'][1]['homeScore']=5
+        self.assertIsNone(live_first_basket(d,'g'))
+
+    def test_no_score_and_incomplete_scoreboard_are_not_guessed(self):
+        from archive import live_first_basket
+        self.assertIsNone(live_first_basket(fixture(),'g'))
+        d=fixture();d['plays']=[]
+        self.assertIsNone(live_first_basket(d,'g'))
