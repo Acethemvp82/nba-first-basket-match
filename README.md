@@ -29,7 +29,7 @@ Current sportsbook odds can be entered manually in the optional section. There i
 
 ## Model and results
 
-Game first and team first are separate estimates. Field-goal settlement excludes free throws; first-points settlement includes them. Match your sportsbook's rules.
+Game first and team first are separate estimates. The board and simulator use First points, including free throws, with no settlement selector. Field-goal statistics remain model inputs. Older snapshots retain their original settlement basis.
 
 The model combines smoothed first-scoring history (60%) and opening-shot share times early conversion (40%). Bounded position adjustments distinguish first-shot attempts allowed from first made field goals allowed. Tip estimates are team-history context only, not confirmed individual-jumper probabilities. G/F/C groups are used without inventing detailed positions. Missing or small position samples are neutral. Unlisted-player probability is retained. See How it works for the full formula and limitations.
 
@@ -39,7 +39,7 @@ Green marks the top eligible candidate in a game only when both lineups are sour
 
 The app automatically keeps the latest pretip forecast for each loaded game and settlement basis in the open session. These records include your current settings, shortlist flags and manually entered prices. Session records are temporary and can disappear on disconnect; downloading your own copy remains useful.
 
-A separate GitHub Actions workflow runs approximately every ten minutes, subject to GitHub scheduling delays and repository permissions. It captures games within two hours before scheduled tip, using up to 20 current-season regular-season games and field-goal settlement. It does not copy private user inputs or manually entered sportsbook prices. Only public model data is committed under `data/pregame/`. Projections are labeled; only source-confirmed candidates can be shortlisted. Capture failures are reported, not backfilled with postgame rankings. A source that publishes starters after tip cannot produce a confirmed pregame shortlist record.
+A separate GitHub Actions workflow runs approximately every ten minutes, subject to GitHub scheduling delays and repository permissions. It captures games within two hours before scheduled tip, using up to 20 current-season regular-season games and first-points settlement (including free throws). New records use a `-first-points.json` suffix to preserve older field-goal records. It does not copy private user inputs or manually entered sportsbook prices. Only public model data is committed under `data/pregame/`. Projections are labeled; only source-confirmed candidates can be shortlisted. Capture failures are reported, not backfilled with postgame rankings. A source that publishes starters after tip cannot produce a confirmed pregame shortlist record.
 
 The archive keeps the latest captured pretip board per game; after tip its forecast rows remain unchanged. Final results are appended separately with a hash of the original forecast rows. Results tracker reads the latest repository records automatically and can also settle open-session records when final data becomes available. Its automatic archive scope differs from a user-selected slate; overall ranks refer to that record's capture scope. Missing captures, scheduling delays, public-feed outages and unavailable lineups remain possible. GitHub Actions must be enabled and allowed to write repository contents. The workflow supports a manual Run workflow action too.
 
@@ -57,8 +57,9 @@ A second NBA.com feed was inaccessible from the build environment. No unverified
 python -m unittest -v
 ```
 
-Coverage includes free-throw vs field-goal parsing, chronological events, exact pregame source-lineup validation, probability mass, directional position allowances, missing data, minimum samples, distinct-game shortlist selection, source-pending/source-confirmed UI behavior, manual prices and settlement-basis switching.
+Coverage includes free-throw vs field-goal parsing, chronological events, exact pregame source-lineup validation, probability mass, directional position allowances, missing data, minimum samples, distinct-game shortlist selection, source-pending/source-confirmed UI behavior, manual prices and fixed first-points settlement.
 
 
 ## First basket simulator (v1.6)
-Select a loaded matchup and 10,000, 50,000 or 100,000 simulated games. The simulator draws exactly one first scorer from the current model probabilities, retaining other/unlisted players, with fixed seed 42. It follows the selected settlement and labels projected starters. Colored results include model probability, simulated count and frequency, plus CSV export. Rankings and shortlist rules are unchanged. This samples the existing estimates; it is not a possession model, calibration, an accuracy improvement or a confidence interval.
+Select a loaded matchup and 10,000, 50,000 or 100,000 simulated games. The simulator draws exactly one first scorer from the current model probabilities, retaining other/unlisted players, with fixed seed 42. It uses First points including free throws and labels projected starters. Colored results include model probability, simulated count and frequency, plus CSV export. Rankings and shortlist rules are unchanged. This samples the existing estimates; it is not a possession model, calibration, an accuracy improvement or a confidence interval.
+
