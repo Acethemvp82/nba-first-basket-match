@@ -8,7 +8,7 @@ from copy import deepcopy
 from test_model import fixture
 
 class AppTest(unittest.TestCase):
-    def test_board_and_market_switch(self):
+    def test_board_uses_first_points(self):
         from streamlit.testing.v1 import AppTest as StreamlitTest
         now=datetime.now(ZoneInfo('America/New_York'))
         tip=(now+timedelta(days=1)).isoformat()
@@ -16,6 +16,8 @@ class AppTest(unittest.TestCase):
         future={'id':'future','date':tip,'shortName':'A @ B','status':{'type':{'state':'pre','detail':'Scheduled','completed':False}},'competitions':[{'competitors':teams}]}
         past={'id':'g','date':(now-timedelta(days=1)).isoformat(),'season':{'year':2027},'seasonType':{'type':2},'competitions':[{'status':{'type':{'completed':True}}}]}
         data=fixture();data['header']['competitions'][0]['date']=past['date']
+        extra=deepcopy(data['plays'][2]);extra['sequenceNumber']='2';extra['participants'][0]['athlete']['id']='A1'
+        data['plays'].append(extra)
         lineup_state={'ready':False}
         def refresh(at):
             next(b for b in at.button if b.label=='Refresh data').click().run()
@@ -61,7 +63,7 @@ class AppTest(unittest.TestCase):
             self.assertFalse(at.exception)
             shortlist=next(d.value for d in at.dataframe if 'Pick' in d.value.columns)
             self.assertEqual(len(shortlist),1)
-            self.assertEqual(shortlist.iloc[0]['Player'],'A2')
+            self.assertEqual(shortlist.iloc[0]['Player'],'A1')
             self.assertEqual(shortlist.iloc[0]['Research tier'],'Limited data')
             price=next(x for x in at.number_input if x.label.startswith('American odds —'))
             self.assertIsNone(price.value)
@@ -73,11 +75,15 @@ class AppTest(unittest.TestCase):
             refresh(at)
             self.assertFalse(at.exception)
             self.assertFalse(any('Pick' in d.value.columns for d in at.dataframe))
-            next(r for r in at.radio if r.label=='Settlement basis').set_value('First points').run()
+            self.assertFalse(any(r.label=='Settlement basis' for r in at.radio))
+            for record in at.session_state['automatic_pregame_records'].values():
+                self.assertEqual(record['basis'],'First points')
+                self.assertTrue(all(r['Basis']=='First points' for r in record['rows']))
             next(b for b in at.button if b.label=='Load / update prediction board').click().run()
             self.assertFalse(at.exception)
             self.assertEqual(next(m for m in at.metric if m.label=='Players ranked').value,'10')
             self.assertTrue(any('First points' in c.value and 'simulated games' in c.value for c in at.caption))
 
 if __name__=='__main__':unittest.main()
+
 
