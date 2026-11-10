@@ -1,6 +1,6 @@
 {
   "version": "1.6.0",
-  "created_at": "2026-11-10T00:24:12.880075+00:00",
+  "created_at": "2026-11-10T00:49:30.890930+00:00",
   "basis": "First points",
   "scope": "Automatic archive: games within two hours of tip; 20 current-season games maximum",
   "shortlist_rules": {
@@ -45,10 +45,10 @@
       "Lineup": "Projected",
       "Lineup source": "Latest historical starters; awaiting ESPN",
       "Listed American odds": null,
-      "Overall Rank": 5,
+      "Overall Rank": 4,
       "Team Rank": 1,
       "Shortlisted": false,
-      "Lineup checked at": "2026-11-10T00:24:12.880075+00:00"
+      "Lineup checked at": "2026-11-10T00:49:30.890930+00:00"
     },
     {
       "Player ID": "3112335",
@@ -85,10 +85,10 @@
       "Lineup": "Projected",
       "Lineup source": "Latest historical starters; awaiting ESPN",
       "Listed American odds": null,
-      "Overall Rank": 6,
+      "Overall Rank": 5,
       "Team Rank": 2,
       "Shortlisted": false,
-      "Lineup checked at": "2026-11-10T00:24:12.880075+00:00"
+      "Lineup checked at": "2026-11-10T00:49:30.890930+00:00"
     },
     {
       "Player ID": "2991230",
@@ -125,10 +125,10 @@
       "Lineup": "Projected",
       "Lineup source": "Latest historical starters; awaiting ESPN",
       "Listed American odds": null,
-      "Overall Rank": 9,
+      "Overall Rank": 7,
       "Team Rank": 1,
       "Shortlisted": false,
-      "Lineup checked at": "2026-11-10T00:24:12.880075+00:00"
+      "Lineup checked at": "2026-11-10T00:49:30.890930+00:00"
     },
     {
       "Player ID": "4871144",
@@ -165,10 +165,10 @@
       "Lineup": "Projected",
       "Lineup source": "Latest historical starters; awaiting ESPN",
       "Listed American odds": null,
-      "Overall Rank": 12,
+      "Overall Rank": 10,
       "Team Rank": 2,
       "Shortlisted": false,
-      "Lineup checked at": "2026-11-10T00:24:12.880075+00:00"
+      "Lineup checked at": "2026-11-10T00:49:30.890930+00:00"
     },
     {
       "Player ID": "3064290",
@@ -205,10 +205,10 @@
       "Lineup": "Projected",
       "Lineup source": "Latest historical starters; awaiting ESPN",
       "Listed American odds": null,
-      "Overall Rank": 18,
+      "Overall Rank": 13,
       "Team Rank": 3,
       "Shortlisted": false,
-      "Lineup checked at": "2026-11-10T00:24:12.880075+00:00"
+      "Lineup checked at": "2026-11-10T00:49:30.890930+00:00"
     },
     {
       "Player ID": "3202",
@@ -245,10 +245,10 @@
       "Lineup": "Projected",
       "Lineup source": "Latest historical starters; awaiting ESPN",
       "Listed American odds": null,
-      "Overall Rank": 19,
+      "Overall Rank": 14,
       "Team Rank": 3,
       "Shortlisted": false,
-      "Lineup checked at": "2026-11-10T00:24:12.880075+00:00"
+      "Lineup checked at": "2026-11-10T00:49:30.890930+00:00"
     },
     {
       "Player ID": "3138196",
@@ -285,10 +285,10 @@
       "Lineup": "Projected",
       "Lineup source": "Latest historical starters; awaiting ESPN",
       "Listed American odds": null,
-      "Overall Rank": 24,
+      "Overall Rank": 19,
       "Team Rank": 4,
       "Shortlisted": false,
-      "Lineup checked at": "2026-11-10T00:24:12.880075+00:00"
+      "Lineup checked at": "2026-11-10T00:49:30.890930+00:00"
     },
     {
       "Player ID": "4684740",
@@ -325,10 +325,10 @@
       "Lineup": "Projected",
       "Lineup source": "Latest historical starters; awaiting ESPN",
       "Listed American odds": null,
-      "Overall Rank": 27,
+      "Overall Rank": 21,
       "Team Rank": 4,
       "Shortlisted": false,
-      "Lineup checked at": "2026-11-10T00:24:12.880075+00:00"
+      "Lineup checked at": "2026-11-10T00:49:30.890930+00:00"
     },
     {
       "Player ID": "4432639",
@@ -365,10 +365,10 @@
       "Lineup": "Projected",
       "Lineup source": "Latest historical starters; awaiting ESPN",
       "Listed American odds": null,
-      "Overall Rank": 28,
+      "Overall Rank": 22,
       "Team Rank": 5,
       "Shortlisted": false,
-      "Lineup checked at": "2026-11-10T00:24:12.880075+00:00"
+      "Lineup checked at": "2026-11-10T00:49:30.890930+00:00"
     },
     {
       "Player ID": "4431767",
@@ -405,10 +405,10 @@
       "Lineup": "Projected",
       "Lineup source": "Latest historical starters; awaiting ESPN",
       "Listed American odds": null,
-      "Overall Rank": 37,
+      "Overall Rank": 29,
       "Team Rank": 5,
       "Shortlisted": false,
-      "Lineup checked at": "2026-11-10T00:24:12.880075+00:00"
+      "Lineup checked at": "2026-11-10T00:49:30.890930+00:00"
     }
   ],
   "settings": {
