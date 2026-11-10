@@ -81,7 +81,7 @@ with st.sidebar:
     date = st.date_input('Slate date (Eastern)', datetime.now(ET).date())
     market = 'First points'
     st.caption('First Basket: first points scored, including free throws.')
-    n = st.slider('Recent regular-season games / team', 5, 30, 20)
+    n = st.select_slider('Recent regular-season games / team', options=[5, 10, 15], value=15, format_func=lambda games: f'Last {games}')
     prior = st.checkbox('Include previous season', value=False, help='Can add sample size early in the season, but includes old roles and rosters. No preseason or playoff games are used.')
     st.caption('Free ESPN feed. Five-minute slate cache; final play-by-play cached for one day.')
     if st.button('Refresh data', width='stretch'):
