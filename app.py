@@ -79,7 +79,8 @@ def history(tid, year, cutoff_string, n, prior, basis, model_version):
 with st.sidebar:
     st.header('Board settings')
     date = st.date_input('Slate date (Eastern)', datetime.now(ET).date())
-    market = st.radio('Settlement basis', ['Field goal', 'First points'], help='Field goal excludes free throws. First points includes them. Match your sportsbook rules.')
+    market = 'First points'
+    st.caption('First Basket: first points scored, including free throws.')
     n = st.slider('Recent regular-season games / team', 5, 30, 20)
     prior = st.checkbox('Include previous season', value=False, help='Can add sample size early in the season, but includes old roles and rosters. No preseason or playoff games are used.')
     st.caption('Free ESPN feed. Five-minute slate cache; final play-by-play cached for one day.')
@@ -109,7 +110,7 @@ def render_model():
 
     board_tab, tracking_tab, method_tab = st.tabs(['Prediction board','Results tracker','How it works'])
     with board_tab:
-        st.caption('Game first = first scorer in the entire game. Team first = first scorer for that team. Both follow your selected settlement basis.')
+        st.caption('Game first = first scorer in the entire game. Team first = first scorer for that team. Both include free throws (First points).')
         if not pregame:
             st.info('All games have started or finished. Pregame rankings are closed. Use Results tracker to settle a saved board.')
         else:
@@ -284,7 +285,7 @@ def render_model():
                     st.dataframe(pd.DataFrame(residuals),hide_index=True,width='stretch')
                     st.caption('Unlisted-player probability is retained, so the ten listed players are not forced to total 100%.')
                     with st.expander('First basket simulator',expanded=True):
-                        st.caption('See how the current model estimates play out over repeated simulated games. Each simulation produces exactly one game-first scorer under your selected settlement basis.')
+                        st.caption('See how the current model estimates play out over repeated simulated games. Each simulation produces exactly one game-first scorer including free throws (First points).')
                         matchups={str(r['Game ID']):r['Matchup'] for r in all_rows}
                         sim_gid=st.selectbox('Simulator matchup',list(matchups),format_func=matchups.get)
                         trials=st.selectbox('Simulated games',[10000,50000,100000],format_func=lambda v:f'{v:,}',key='sim-trials')
@@ -332,7 +333,7 @@ def render_model():
             st.warning(f'Background archive unavailable: {type(ex).__name__}')
         automatic={f'Background archive · {k}':r for k,r in archived.items()}
         automatic.update({f'This session · {k}':r for k,r in st.session_state.get('automatic_pregame_records',{}).items()})
-        st.caption('Open-session records save your loaded board automatically. Background records use default settings, field-goal settlement and a scheduled capture within two hours of tip. Session records may disappear when disconnected; the background archive is committed to the repository. Scheduling and data delays can cause missed captures.')
+        st.caption('Open-session records save your loaded board automatically. New background records use default settings, first-points settlement including free throws, and a scheduled capture within two hours of tip. Older records keep their original settlement basis. Session records may disappear when disconnected; the background archive is committed to the repository. Scheduling and data delays can cause missed captures.')
         if archive_index.get('checked_hour_utc'):
             st.caption(f"Background archive heartbeat: {utc(archive_index['checked_hour_utc']).astimezone(ET):%b %d, %I:%M %p ET} (hourly timestamp).")
         if archive_index.get('errors'):
@@ -396,12 +397,12 @@ def render_model():
 
 Optional American odds are entered by you and are stored with the shortlist in the pregame snapshot. They do not affect rank and are not checked for freshness. Missing prices remain blank. The tracker identifies saved shortlist picks and displays settled hits and pending games; neither a shortlist nor displayed model estimates establish profitability.
 
-**Game first %** estimates a player scoring first in the entire game. **Team first %** estimates that player scoring first for his own team. Choose field-goal or first-points settlement to match your book; first points includes free throws.
+**Game first %** estimates a player scoring first in the entire game. **Team first %** estimates that player scoring first for his own team. The board and simulator use First points, including free throws. Field-goal statistics remain inputs to the model. Older saved records retain their original settlement basis.
 
 **Opening shot %** is the share of sampled team games in which the player took that team's first field-goal attempt. **Early FG %** is actual shooting in the opening three minutes of the first quarter. **Starts** counts starts within that team's sample, not career starts.
 
 ### Simulator
-The simulator draws one game-first scorer per simulated game from the current board probabilities and keeps the unlisted-player probability. It follows the selected field-goal or first-points settlement and the displayed starter status. It does not simulate individual possessions, foul rates, jump balls or changing lineups. A fixed seed makes repeated runs stable; the displayed percentages are frequencies under the model, not measured accuracy or confidence intervals. It does not change rankings or shortlist eligibility.
+The simulator draws one game-first scorer per simulated game from the current board probabilities and keeps the unlisted-player probability. It uses First points, including free throws, and the displayed starter status. It does not simulate individual possessions, foul rates, jump balls or changing lineups. A fixed seed makes repeated runs stable; the displayed percentages are frequencies under the model, not measured accuracy or confidence intervals. It does not change rankings or shortlist eligibility.
 
 ### Forecast formula and context
 The team's game-first rate is shrunk toward 50% with ten prior games. Its matchup chance averages that rate and the opponent's failure-to-score-first rate.
@@ -431,4 +432,5 @@ No confirmed jumper lineup, automatic injury adjustment, sportsbook odds feed, g
 
 
 render_model()
+
 
