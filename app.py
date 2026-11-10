@@ -12,9 +12,9 @@ if getattr(_model, 'VERSION', None) != '1.6.0':
     importlib.reload(_model)
 from model import fetch, competitors, team_id, utc, prior_events, parse_game, forecast, implied, VERSION, opening_context, select_shortlist, SHORTLIST_RULES, source_starters, tip_conversion, jumper_records, shot_style, position_summary, simulate_first_basket
 import archive as _archive
-if not hasattr(_archive, 'tracking_summary'):
+if not hasattr(_archive, 'live_first_basket'):
     importlib.reload(_archive)
-from archive import snapshot as make_snapshot, keep_pregame, settle, tracking_summary
+from archive import snapshot as make_snapshot, keep_pregame, settle, tracking_summary, live_first_basket
 
 ET = ZoneInfo('America/New_York')
 st.set_page_config(page_title='First Basket Match', page_icon='🏀', layout='wide')
@@ -329,6 +329,27 @@ def render_model():
                     st.caption('Save before tip. Snapshots remain on your device; Streamlit disk storage is not treated as permanent tracking.')
 
     with tracking_tab:
+        st.subheader('Who scored first — live results')
+        st.caption('First Basket includes free throws. This section shows the scorer as soon as ESPN supplies the opening scoring play; it does not wait for the final buzzer. Refreshes every 60 seconds while open, with up to 45 seconds of source cache.')
+        started=[e for e in events if e.get('status',e.get('competitions',[{}])[0].get('status',{})).get('type',{}).get('state') in ['in','post']]
+        def opening_result(e):
+            try:
+                summary,_=game_lineups(str(e['id']))
+                return str(e['id']),live_first_basket(summary,str(e['id']))
+            except Exception:return str(e['id']),None
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            first_results=dict(pool.map(opening_result,started))
+        actual_rows=[]
+        for event in events:
+            gid=str(event['id']);actual=first_results.get(gid)
+            teams={team_id(c):c['team'].get('abbreviation','') for c in competitors(event)}
+            actual_rows.append({'Matchup':event.get('shortName',gid),
+                                'First Basket scorer':actual['Player'] if actual else 'Awaiting scoring feed' if gid in first_results else 'Not started',
+                                'Team':teams.get(actual['Team ID'],'') if actual else '—',
+                                'Method':actual['Method'] if actual else '—',
+                                'Q1 clock':actual['Clock'] if actual else '—'})
+        if actual_rows:st.dataframe(pd.DataFrame(actual_rows),hide_index=True,width='stretch')
+        st.caption('Live names can be corrected by the source. Saved pregame ranks and official completed-game comparisons are shown below. A game can have a live scorer here even if no pregame forecast was saved.')
         st.subheader('Automatic pregame records')
         try: archived,archive_index=background_records()
         except Exception as ex:
@@ -460,6 +481,7 @@ No confirmed jumper lineup, automatic injury adjustment, sportsbook odds feed, g
 
 
 render_model()
+
 
 
 
