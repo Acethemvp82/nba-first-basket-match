@@ -61,7 +61,7 @@ Coverage includes free-throw vs field-goal parsing, chronological events, exact 
 
 
 ## First basket simulator (v1.6)
-Select a loaded matchup and 10,000, 50,000 or 100,000 simulated games. The simulator draws exactly one first scorer from the current model probabilities, retaining other/unlisted players, with fixed seed 42. It uses First points including free throws and labels projected starters. Colored results include model probability, simulated count and frequency, plus CSV export. Rankings and shortlist rules are unchanged. This samples the existing estimates; it is not a possession model, calibration, an accuracy improvement or a confidence interval.
+Select one or more loaded matchups and 10,000, 50,000 or 100,000 simulated games per matchup. All loaded matchups are selected by default. Each matchup draws exactly one first scorer per simulated game from its own model probabilities, retains other/unlisted players, and uses a stable seed based on the game ID. The CSV includes every selected matchup. It uses First points including free throws and labels projected starters. Colored results include model probability, simulated count and frequency, plus CSV export. Rankings and shortlist rules are unchanged. This samples the existing estimates; it is not a possession model, calibration, an accuracy improvement or a confidence interval.
 
 
 ## Results tracker
