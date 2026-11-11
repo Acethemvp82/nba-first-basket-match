@@ -1,6 +1,22 @@
 {
-  "checked_hour_utc": "2026-11-10T23:00:00+00:00",
+  "checked_hour_utc": "2026-11-11T02:00:00+00:00",
   "records": [
+    {
+      "path": "pregame/2026-11-10-401909965-first-points-last15.json",
+      "date": "2026-11-10",
+      "game_id": "401909965",
+      "matchup": "OKC @ POR",
+      "created_at": "2026-11-11T02:56:43.942746+00:00",
+      "settled": false
+    },
+    {
+      "path": "pregame/2026-11-10-401909964-first-points-last15.json",
+      "date": "2026-11-10",
+      "game_id": "401909964",
+      "matchup": "ORL @ SAC",
+      "created_at": "2026-11-11T02:56:43.942746+00:00",
+      "settled": false
+    },
     {
       "path": "pregame/2026-11-10-401909961-first-points-last15.json",
       "date": "2026-11-10",
@@ -15,7 +31,7 @@
       "game_id": "401909960",
       "matchup": "MIL @ NY",
       "created_at": "2026-11-10T23:31:18.137564+00:00",
-      "settled": false
+      "settled": true
     },
     {
       "path": "pregame/2026-11-09-401909959-first-points-last15.json",
