@@ -14,6 +14,7 @@ class AppTest(unittest.TestCase):
         tip=(now+timedelta(days=1)).isoformat()
         teams=[{'team':{'id':t,'displayName':t,'abbreviation':t}} for t in ['A','B']]
         future={'id':'future','date':tip,'shortName':'A @ B','status':{'type':{'state':'pre','detail':'Scheduled','completed':False}},'competitions':[{'competitors':teams}]}
+        future_two={**future,'id':'future2','shortName':'B @ A'}
         past={'id':'g','date':(now-timedelta(days=1)).isoformat(),'season':{'year':2027},'seasonType':{'type':2},'competitions':[{'status':{'type':{'completed':True}}}]}
         data=fixture();data['header']['competitions'][0]['date']=past['date']
         extra=deepcopy(data['plays'][2]);extra['sequenceNumber']='2';extra['participants'][0]['athlete']['id']='A1'
@@ -23,11 +24,11 @@ class AppTest(unittest.TestCase):
             next(b for b in at.button if b.label=='Refresh data').click().run()
             return at
         def fake(path):
-            if path.startswith('scoreboard'):return {'events':[future],'season':{'year':2027}}
+            if path.startswith('scoreboard'):return {'events':[future,future_two],'season':{'year':2027}}
             if '/schedule?' in path:return {'events':[{**past,'id':f'g{i}','date':(now-timedelta(days=i+1)).isoformat()} for i in range(5)]}
-            if path=='summary?event=future':
+            if path in ['summary?event=future','summary?event=future2']:
                 current=deepcopy(data);comp=current['header']['competitions'][0]
-                comp.update({'id':'future','date':tip,'status':{'type':{'state':'pre','completed':False}}})
+                comp.update({'id':path.split('=')[1],'date':tip,'status':{'type':{'state':'pre','completed':False}}})
                 if not lineup_state['ready']:current['boxscore']['players']=[]
                 return current
             if path.startswith('summary'):return deepcopy(data)
@@ -46,7 +47,7 @@ class AppTest(unittest.TestCase):
             self.assertEqual(len(sim),11)
             self.assertEqual(int(sim['Simulated first baskets'].sum()),10000)
             self.assertTrue((sim[sim['Player']!='Other / unlisted players']['Research tier']=='Awaiting starters').all())
-            next(x for x in at.selectbox if x.label=='Simulated games').set_value(50000).run()
+            next(x for x in at.selectbox if x.label=='Simulated games per matchup').set_value(50000).run()
             self.assertFalse(at.exception)
             sim=next(d.value for d in at.dataframe if 'Simulated first baskets' in d.value.columns)
             self.assertEqual(int(sim['Simulated first baskets'].sum()),50000)
@@ -83,6 +84,21 @@ class AppTest(unittest.TestCase):
             self.assertFalse(at.exception)
             self.assertEqual(next(m for m in at.metric if m.label=='Players ranked').value,'10')
             self.assertTrue(any('First points' in c.value and 'simulated games' in c.value for c in at.caption))
+            # Loading a second game gives it a separate simulation and outcome count.
+            next(x for x in at.multiselect if x.label=='Matchups to load').set_value(['future','future2']).run()
+            next(b for b in at.button if b.label=='Load / update prediction board').click().run()
+            self.assertFalse(at.exception)
+            picker=next(x for x in at.multiselect if x.label=='Simulator matchups')
+            self.assertEqual(picker.value,['future','future2'])
+            trials=next(x for x in at.selectbox if x.label=='Simulated games per matchup').value
+            sims=[d.value for d in at.dataframe if 'Simulated first baskets' in d.value.columns]
+            self.assertEqual([int(s['Simulated first baskets'].sum()) for s in sims],[trials,trials])
+            picker.set_value(['future2']).run()
+            self.assertFalse(at.exception)
+            self.assertEqual(sum('Simulated first baskets' in d.value.columns for d in at.dataframe),1)
+            next(x for x in at.multiselect if x.label=='Simulator matchups').set_value([]).run()
+            self.assertFalse(at.exception)
+            self.assertFalse(any('Simulated first baskets' in d.value.columns for d in at.dataframe))
 
 if __name__=='__main__':unittest.main()
 
