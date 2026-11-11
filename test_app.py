@@ -39,10 +39,18 @@ class AppTest(unittest.TestCase):
         with patch('model.fetch',side_effect=fake):
             at=StreamlitTest.from_file(str(Path(__file__).with_name('app.py')),default_timeout=30).run()
             self.assertFalse(at.exception)
+            # The simulator also works before the prediction board is loaded.
+            next(x for x in at.multiselect if x.label=='Simulator matchups').set_value(['future','future2']).run()
+            self.assertFalse(at.exception)
+            self.assertEqual(sum('Simulated first baskets' in d.value.columns for d in at.dataframe),2)
+            self.assertFalse(any(m.label=='Players ranked' for m in at.metric))
+            next(x for x in at.multiselect if x.label=='Simulator matchups').set_value(['future']).run()
             next(b for b in at.button if b.label=='Load / update prediction board').click().run()
             self.assertFalse(at.exception)
             self.assertEqual(next(m for m in at.metric if m.label=='Players ranked').value,'10')
             self.assertTrue(at.session_state['automatic_pregame_records'])
+            next(x for x in at.multiselect if x.label=='Simulator matchups').set_value(['future']).run()
+            self.assertFalse(at.exception)
             sim=next(d.value for d in at.dataframe if 'Simulated first baskets' in d.value.columns)
             self.assertEqual(len(sim),11)
             self.assertEqual(int(sim['Simulated first baskets'].sum()),10000)
@@ -84,10 +92,11 @@ class AppTest(unittest.TestCase):
             self.assertFalse(at.exception)
             self.assertEqual(next(m for m in at.metric if m.label=='Players ranked').value,'10')
             self.assertTrue(any('First points' in c.value and 'simulated games' in c.value for c in at.caption))
-            # Loading a second game gives it a separate simulation and outcome count.
-            next(x for x in at.multiselect if x.label=='Matchups to load').set_value(['future','future2']).run()
-            next(b for b in at.button if b.label=='Load / update prediction board').click().run()
+            # Add the second matchup in the simulator without changing the board.
+            next(x for x in at.multiselect if x.label=='Simulator matchups').set_value(['future','future2']).run()
             self.assertFalse(at.exception)
+            self.assertEqual(next(m for m in at.metric if m.label=='Players ranked').value,'10')
+            self.assertEqual(set(at.session_state['automatic_pregame_records']),{'First points:future'})
             picker=next(x for x in at.multiselect if x.label=='Simulator matchups')
             self.assertEqual(picker.value,['future','future2'])
             trials=next(x for x in at.selectbox if x.label=='Simulated games per matchup').value
@@ -101,5 +110,6 @@ class AppTest(unittest.TestCase):
             self.assertFalse(any('Simulated first baskets' in d.value.columns for d in at.dataframe))
 
 if __name__=='__main__':unittest.main()
+
 
 
