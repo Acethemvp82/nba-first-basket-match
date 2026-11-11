@@ -288,18 +288,26 @@ def render_model():
                     st.dataframe(pd.DataFrame(residuals),hide_index=True,width='stretch')
                     st.caption('Unlisted-player probability is retained, so the ten listed players are not forced to total 100%.')
                     with st.expander('First basket simulator',expanded=True):
-                        st.caption('See how the current model estimates play out over repeated simulated games. Each simulation produces exactly one game-first scorer including free throws (First points).')
+                        st.caption('Choose one or more loaded matchups. Each game has its own first scorer, including free throws (First points).')
                         matchups={str(r['Game ID']):r['Matchup'] for r in all_rows}
-                        sim_gid=st.selectbox('Simulator matchup',list(matchups),format_func=matchups.get)
-                        trials=st.selectbox('Simulated games',[10000,50000,100000],format_func=lambda v:f'{v:,}',key='sim-trials')
-                        sim_rows=df[df['Game ID'].astype(str)==sim_gid].to_dict('records')
-                        if any(r['Lineup']!='Source confirmed' for r in sim_rows):
-                            st.info('Projected starters: simulation updates automatically when source-confirmed lineups arrive.')
-                        simulation=pd.DataFrame(simulate_first_basket(sim_rows,trials=trials))
-                        st.caption(f'{matchups[sim_gid]} • {market} • {trials:,} simulated games. Ordered by model estimate so random variation does not change research priority.')
-                        st.dataframe(simulation.style.apply(priority_colors,axis=1).format({'Model %':'{:.1f}','Simulated %':'{:.1f}'}),hide_index=True,width='stretch')
-                        st.caption('Other / unlisted players includes everyone outside the ten listed starters. Fixed random seed keeps identical inputs stable on refresh. More simulations reduce sampling noise; they do not improve the model or measure uncertainty in its estimates.')
-                        st.download_button('Download simulation CSV',simulation.assign(Matchup=matchups[sim_gid],Basis=market,Simulations=trials,Seed=42).to_csv(index=False),file_name=f'first-basket-simulation-{sim_gid}.csv',mime='text/csv')
+                        sim_ids=st.multiselect('Simulator matchups',list(matchups),default=list(matchups),format_func=matchups.get)
+                        trials=st.selectbox('Simulated games per matchup',[10000,50000,100000],format_func=lambda v:f'{v:,}',key='sim-trials')
+                        simulations=[]
+                        for gid in sim_ids:
+                            rows=df[df['Game ID'].astype(str)==gid].to_dict('records')
+                            seed=f'first-basket:{gid}'
+                            sim=pd.DataFrame(simulate_first_basket(rows,trials=trials,seed=seed))
+                            lineup=rows[0]['Lineup']
+                            st.markdown(f'**{matchups[gid]}**')
+                            st.caption(f'{market} • {trials:,} simulated games • {lineup} starters')
+                            st.dataframe(sim.style.apply(priority_colors,axis=1).format({'Model %':'{:.1f}','Simulated %':'{:.1f}'}),hide_index=True,width='stretch')
+                            simulations.append(sim.assign(**{'Game ID':gid,'Matchup':matchups[gid],'Basis':market,'Simulations':trials,'Seed':seed,'Lineup':lineup}))
+                        if simulations:
+                            st.caption('Each matchup keeps its own unlisted-player chance and is ordered by model estimate. More runs reduce sampling noise without changing the model estimates or rankings.')
+                            export=pd.concat(simulations,ignore_index=True)
+                            st.download_button('Download simulation CSV',export.to_csv(index=False),file_name=f'first-basket-simulation-{date}.csv',mime='text/csv')
+                        else:
+                            st.info('Select at least one loaded matchup to see simulation results.')
                     st.subheader('Compare a sportsbook price')
                     lookup={i:f"{r['Player']} · {r['Team']}" for i,r in df.iterrows()}
                     idx=st.selectbox('Player',list(lookup),format_func=lookup.get)
@@ -451,7 +459,7 @@ Optional American odds are entered by you and are stored with the shortlist in t
 **Opening shot %** is the share of sampled team games in which the player took that team's first field-goal attempt. **Early FG %** is actual shooting in the opening three minutes of the first quarter. **Starts** counts starts within that team's sample, not career starts.
 
 ### Simulator
-The simulator draws one game-first scorer per simulated game from the current board probabilities and keeps the unlisted-player probability. It uses First points, including free throws, and the displayed starter status. It does not simulate individual possessions, foul rates, jump balls or changing lineups. A fixed seed makes repeated runs stable; the displayed percentages are frequencies under the model, not measured accuracy or confidence intervals. It does not change rankings or shortlist eligibility.
+Select any of the loaded matchups; all are selected by default. The simulator draws one game-first scorer per simulated game from each matchup’s own board probabilities and keeps its unlisted-player probability. The run count applies to each selected matchup. The CSV includes all selected games. It uses First points, including free throws, and the displayed starter status. It does not simulate individual possessions, foul rates, jump balls or changing lineups. A fixed seed for each matchup makes repeated runs stable; the displayed percentages are frequencies under the model, not measured accuracy or confidence intervals. It does not change rankings or shortlist eligibility.
 
 ### Forecast formula and context
 The team's game-first rate is shrunk toward 50% with ten prior games. Its matchup chance averages that rate and the opponent's failure-to-score-first rate.
