@@ -79,6 +79,101 @@ def history(tid, year, cutoff_string, n, prior, basis, model_version):
         except Exception as ex: errors.append(f"{e['id']}: {type(ex).__name__}: {ex}")
     return output, errors
 
+def load_matchup_history(events,year,n,prior,market):
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        jobs = {pool.submit(history,team_id(c),year,e['date'],n,prior,market,VERSION):
+                (e['id'],team_id(c)) for e in events for c in competitors(e)}
+        loaded={}
+        for future in as_completed(jobs):
+            try:loaded[jobs[future]]=future.result()
+            except Exception as ex:loaded[jobs[future]]=([],[str(ex)])
+    return loaded
+
+def resolve_lineup(event,tid,games,summary):
+    data=live(f'teams/{tid}/roster')
+    roster={str(a['id']):{'name':a['displayName'],'position':a.get('position',{}).get('abbreviation','?')}
+            for a in data.get('athletes',[])}
+    if not roster:raise ValueError('Current roster unavailable')
+    confirmed=source_starters(summary,event['id'],tid,roster,event['date'])
+    projected=sorted((p for p in games[0]['starters'][tid] if p in roster),key=lambda p:roster[p]['name'])
+    return roster,confirmed,confirmed or projected
+
+def add_matchup_labels(rows,event,market,confirmed,checked_at):
+    teams={team_id(c):c['team']['abbreviation'] for c in competitors(event)}
+    for row in rows:
+        row.update({'Game ID':event['id'],'Matchup':event['shortName'],'Team':teams[row['Team ID']],
+                    'Lineup':'Source confirmed' if confirmed else 'Projected',
+                    'Lineup source':'ESPN current-game starter flags' if confirmed else 'Latest historical starters; awaiting ESPN',
+                    'Lineup checked at':checked_at,'Basis':market,'Tip UTC':event['date']})
+
+def label_priority(df):
+    leaders=set()
+    now=datetime.now(ET)
+    for gid,group in df.groupby('Game ID',sort=False):
+        eligible=select_shortlist(group.to_dict('records'),now)
+        if eligible:leaders.add((str(gid),str(eligible[0]['Player ID'])))
+    def tier(r):
+        if r['Lineup']!='Source confirmed':return 'Awaiting starters'
+        if min(r['Sample'],r['Opponent sample'])<15 or r['Starts']<8:return 'Limited data'
+        return 'Top game candidate' if (str(r['Game ID']),str(r['Player ID'])) in leaders else 'Research'
+    df['Research tier']=df.apply(tier,axis=1)
+
+def render_simulator(pregame,date,year,n,prior,market):
+    st.subheader('First basket simulator')
+    st.caption('Add one or more games directly from this slate. Each matchup uses the history setting in the sidebar and gets its own results.')
+    now=datetime.now(ET)
+    available={str(e['id']):e for e in pregame if utc(e['date'])>now}
+    if not available:
+        st.info('No pregame matchups are available to simulate.')
+        return
+    chosen=st.multiselect('Simulator matchups',list(available),format_func=lambda gid:available[gid]['shortName'],
+                          key=f'sim-matchups-{date}',placeholder='Add matchups')
+    trials=st.selectbox('Simulated games per matchup',[10000,50000,100000],format_func=lambda v:f'{v:,}',key='sim-trials')
+    selected_games=[available[gid] for gid in chosen if gid in available]
+    if not selected_games:
+        st.info('Select at least one matchup to see simulation results.')
+        return
+    with st.spinner('Loading data for the selected matchups…'):
+        loaded=load_matchup_history(selected_games,year,n,prior,market)
+    simulations=[]
+    for e in selected_games:
+        gid=e['id']
+        st.markdown(f"**{e['shortName']}**")
+        hist={team_id(c):loaded[(gid,team_id(c))][0] for c in competitors(e)}
+        if any(not games for games in hist.values()):
+            st.warning('This matchup needs valid completed games for both teams.')
+            continue
+        try:current,checked_at=game_lineups(gid)
+        except Exception:current,checked_at={},None
+        try:
+            metadata,starters,flags={},{},[]
+            for tid,games in hist.items():
+                metadata[tid],confirmed,starters[tid]=resolve_lineup(e,tid,games,current)
+                flags.append(bool(confirmed))
+            if any(len(players)!=5 for players in starters.values()):
+                st.warning('Five starters are not yet available for both teams.')
+                continue
+            rows,_=forecast(hist,starters,metadata)
+        except Exception:
+            st.warning('Current data is incomplete; simulation unavailable for this matchup.')
+            continue
+        if datetime.now(ET)>=utc(e['date']):
+            st.info('Scheduled tip reached. Check Results tracker for this game.')
+            continue
+        add_matchup_labels(rows,e,market,all(flags),checked_at)
+        frame=pd.DataFrame(rows)
+        label_priority(frame)
+        seed=f'first-basket:{gid}'
+        sim=pd.DataFrame(simulate_first_basket(frame.to_dict('records'),trials=trials,seed=seed))
+        lineup=rows[0]['Lineup']
+        st.caption(f'{market} • {trials:,} simulated games • {lineup} starters')
+        st.dataframe(sim.style.apply(priority_colors,axis=1).format({'Model %':'{:.1f}','Simulated %':'{:.1f}'}),hide_index=True,width='stretch')
+        simulations.append(sim.assign(**{'Game ID':gid,'Matchup':e['shortName'],'Basis':market,'Simulations':trials,'Seed':seed,'Lineup':lineup}))
+    if simulations:
+        st.caption('Each matchup keeps its own unlisted-player chance. More runs reduce sampling noise; they do not change model estimates.')
+        export=pd.concat(simulations,ignore_index=True)
+        st.download_button('Download simulation CSV',export.to_csv(index=False),file_name=f'first-basket-simulation-{date}.csv',mime='text/csv')
+
 with st.sidebar:
     st.header('Board settings')
     date = st.date_input('Slate date (Eastern)', datetime.now(ET).date())
@@ -111,7 +206,7 @@ def render_model():
     pregame = [e for e in events if e['status']['type']['state'] == 'pre']
     year = int(slate.get('season',{}).get('year', date.year+(date.month>=7)))
 
-    board_tab, tracking_tab, method_tab = st.tabs(['Prediction board','Results tracker','How it works'])
+    board_tab, sim_tab, tracking_tab, method_tab = st.tabs(['Prediction board','Simulator','Results tracker','How it works'])
     with board_tab:
         st.caption('Game first = first scorer in the entire game. Team first = first scorer for that team. Both include free throws (First points).')
         if not pregame:
@@ -126,18 +221,8 @@ def render_model():
             signature = (str(date),market,n,prior,chosen_ids)
             if st.session_state.get('loaded') == signature and chosen_ids:
                 active = [e for e in pregame if e['id'] in chosen_ids]
-                jobs = {}
                 with st.spinner('Loading real opening possessions and historical starters…'):
-                    with ThreadPoolExecutor(max_workers=4) as pool:
-                        for e in active:
-                            for c in competitors(e):
-                                tid = team_id(c)
-                                jobs[pool.submit(history,tid,year,e['date'],n,prior,market,VERSION)] = (e['id'],tid)
-                        loaded = {}
-                        for future in as_completed(jobs):
-                            key=jobs[future]
-                            try: loaded[key]=future.result()
-                            except Exception as ex: loaded[key]=([], [str(ex)])
+                    loaded = load_matchup_history(active,year,n,prior,market)
                 all_rows, residuals, issues = [], [], []
                 for e in active:
                     gid = e['id']; hist = {}; selected = {}; metadata = {}; confirms=[]
@@ -156,19 +241,13 @@ def render_model():
                         for col,c in zip(columns,cs):
                             tid=team_id(c); games, errs=loaded[(gid,tid)]; hist[tid]=games; issues.extend(errs)
                             latest = games[0]
-                            # Current roster is the candidate pool; historical boxscore only provides projection.
                             try:
-                                rd=live(f'teams/{tid}/roster')
-                                roster={str(a['id']):{'name':a['displayName'],'position':a.get('position',{}).get('abbreviation','?')} for a in rd.get('athletes',[])}
+                                roster,confirmed,players=resolve_lineup(e,tid,games,current_summary)
                             except Exception as ex:
-                                issues.append(f'Roster {tid}: {ex}'); roster={}
-                            if not roster:
+                                issues.append(f'Roster {tid}: {ex}')
                                 col.error('Current roster unavailable; matchup withheld.'); continue
                             metadata[tid]=roster
-                            confirmed=source_starters(current_summary,gid,tid,roster,e['date'])
-                            default=[p for p in latest['starters'][tid] if p in roster]
-                            default.sort(key=lambda p:roster[p]['name'])
-                            selected[tid]=confirmed or default
+                            selected[tid]=players
                             confirms.append(bool(confirmed))
                             with col:
                                 st.write(c['team']['displayName'])
@@ -224,12 +303,7 @@ def render_model():
                                                'Context':style['note']})
                         st.dataframe(pd.DataFrame(style_rows),hide_index=True,width='stretch')
                         st.caption('Layups, dunks, hooks, 2PT jumpers and 3PT shots remain separate. Unknown types are excluded. Ties show Mixed rather than inventing a preferred style. No new weight is applied.')
-                    for row in rows:
-                        row.update({'Game ID':gid,'Matchup':e['shortName'],'Team':abbreviations[row['Team ID']],
-                                    'Lineup':'Source confirmed' if all(confirms) else 'Projected',
-                                    'Lineup source':'ESPN current-game starter flags' if all(confirms) else 'Latest historical starters; awaiting ESPN',
-                                    'Lineup checked at':checked_at,
-                                    'Basis':market,'Tip UTC':e['date']})
+                    add_matchup_labels(rows,e,market,all(confirms),checked_at)
                     all_rows.extend(rows)
                     residuals.append({'Matchup':e['shortName'],'Other players / unlisted first scorer %':round(100*sum(res.values()),1)})
                 if issues:
@@ -239,18 +313,7 @@ def render_model():
                     df=pd.DataFrame(all_rows).sort_values('Game first %',ascending=False).reset_index(drop=True)
                     df.insert(0,'Overall Rank',range(1,len(df)+1))
                     df.insert(1,'Team Rank',df.groupby(['Game ID','Team ID'])['Game first %'].rank(method='first',ascending=False).astype(int))
-                    # Color priority is per game and uses the existing eligibility rules.
-                    # It does not alter estimates, ranks, or shortlist selection.
-                    now_for_priority=datetime.now(ET)
-                    leaders=set()
-                    for game_id in df['Game ID'].unique():
-                        eligible=select_shortlist(df[df['Game ID']==game_id].to_dict('records'),now_for_priority)
-                        if eligible:leaders.add((str(eligible[0]['Game ID']),str(eligible[0]['Player ID'])))
-                    def tier(r):
-                        if r['Lineup']!='Source confirmed':return 'Awaiting starters'
-                        if min(r['Sample'],r['Opponent sample'])<15 or r['Starts']<8:return 'Limited data'
-                        return 'Top game candidate' if (str(r['Game ID']),str(r['Player ID'])) in leaders else 'Research'
-                    df['Research tier']=df.apply(tier,axis=1)
+                    label_priority(df)
                     picks=select_shortlist(df.to_dict('records'),datetime.now(ET))
                     shortlisted={(str(r['Game ID']),str(r['Player ID'])) for r in picks}
                     listed_odds={}
@@ -287,27 +350,6 @@ def render_model():
                     st.caption('Green = top eligible game candidate with adequate history. Amber = limited history. Gray = awaiting source-confirmed starters. Other rows stay navy. Labels explain each color; overall ranks cover loaded matchups only.')
                     st.dataframe(pd.DataFrame(residuals),hide_index=True,width='stretch')
                     st.caption('Unlisted-player probability is retained, so the ten listed players are not forced to total 100%.')
-                    with st.expander('First basket simulator',expanded=True):
-                        st.caption('Choose one or more loaded matchups. Each game has its own first scorer, including free throws (First points).')
-                        matchups={str(r['Game ID']):r['Matchup'] for r in all_rows}
-                        sim_ids=st.multiselect('Simulator matchups',list(matchups),default=list(matchups),format_func=matchups.get)
-                        trials=st.selectbox('Simulated games per matchup',[10000,50000,100000],format_func=lambda v:f'{v:,}',key='sim-trials')
-                        simulations=[]
-                        for gid in sim_ids:
-                            rows=df[df['Game ID'].astype(str)==gid].to_dict('records')
-                            seed=f'first-basket:{gid}'
-                            sim=pd.DataFrame(simulate_first_basket(rows,trials=trials,seed=seed))
-                            lineup=rows[0]['Lineup']
-                            st.markdown(f'**{matchups[gid]}**')
-                            st.caption(f'{market} • {trials:,} simulated games • {lineup} starters')
-                            st.dataframe(sim.style.apply(priority_colors,axis=1).format({'Model %':'{:.1f}','Simulated %':'{:.1f}'}),hide_index=True,width='stretch')
-                            simulations.append(sim.assign(**{'Game ID':gid,'Matchup':matchups[gid],'Basis':market,'Simulations':trials,'Seed':seed,'Lineup':lineup}))
-                        if simulations:
-                            st.caption('Each matchup keeps its own unlisted-player chance and is ordered by model estimate. More runs reduce sampling noise without changing the model estimates or rankings.')
-                            export=pd.concat(simulations,ignore_index=True)
-                            st.download_button('Download simulation CSV',export.to_csv(index=False),file_name=f'first-basket-simulation-{date}.csv',mime='text/csv')
-                        else:
-                            st.info('Select at least one loaded matchup to see simulation results.')
                     st.subheader('Compare a sportsbook price')
                     lookup={i:f"{r['Player']} · {r['Team']}" for i,r in df.iterrows()}
                     idx=st.selectbox('Player',list(lookup),format_func=lookup.get)
@@ -335,6 +377,9 @@ def render_model():
                     st.download_button('Save pregame snapshot for tracking',json.dumps(snap,indent=2,allow_nan=False,default=str),file_name=f'first-basket-{date}.json',mime='application/json',disabled=not can_save)
                     st.download_button('Download board CSV',df.to_csv(index=False),file_name=f'first-basket-{date}.csv',mime='text/csv',disabled=not can_save)
                     st.caption('Save before tip. Snapshots remain on your device; Streamlit disk storage is not treated as permanent tracking.')
+
+    with sim_tab:
+        render_simulator(pregame,date,year,n,prior,market)
 
     with tracking_tab:
         st.subheader('Who scored first — live results')
@@ -459,7 +504,7 @@ Optional American odds are entered by you and are stored with the shortlist in t
 **Opening shot %** is the share of sampled team games in which the player took that team's first field-goal attempt. **Early FG %** is actual shooting in the opening three minutes of the first quarter. **Starts** counts starts within that team's sample, not career starts.
 
 ### Simulator
-Select any of the loaded matchups; all are selected by default. The simulator draws one game-first scorer per simulated game from each matchup’s own board probabilities and keeps its unlisted-player probability. The run count applies to each selected matchup. The CSV includes all selected games. It uses First points, including free throws, and the displayed starter status. It does not simulate individual possessions, foul rates, jump balls or changing lineups. A fixed seed for each matchup makes repeated runs stable; the displayed percentages are frequencies under the model, not measured accuracy or confidence intervals. It does not change rankings or shortlist eligibility.
+In the Simulator tab, select any upcoming matchups directly from the slate. The prediction board can be loaded separately. The simulator draws one game-first scorer per simulated game from each matchup’s own board probabilities and keeps its unlisted-player probability. The run count applies to each selected matchup. The CSV includes all selected games. It uses First points, including free throws, and the displayed starter status. It does not simulate individual possessions, foul rates, jump balls or changing lineups. A fixed seed for each matchup makes repeated runs stable; the displayed percentages are frequencies under the model, not measured accuracy or confidence intervals. It does not change rankings or shortlist eligibility.
 
 ### Forecast formula and context
 The team's game-first rate is shrunk toward 50% with ten prior games. Its matchup chance averages that rate and the opponent's failure-to-score-first rate.
@@ -489,6 +534,7 @@ No confirmed jumper lineup, automatic injury adjustment, sportsbook odds feed, g
 
 
 render_model()
+
 
 
 
