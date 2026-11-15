@@ -9,7 +9,7 @@ def snapshot(rows,basis,created_at,scope='Loaded games'):
     return {'version':VERSION,'created_at':created_at.isoformat(),'basis':basis,
             'scope':scope,'shortlist_rules':SHORTLIST_RULES,'rows':deepcopy(rows)}
 
-def keep_pregame(previous, candidate, now):
+def keep_pregame(previous, candidate, now, *, prefer_confirmed=False):
     """Retain latest pretip record. Refuse late, mixed-game, or older records."""
     rows=candidate.get('rows',[])
     if not rows or len({str(r.get('Game ID')) for r in rows})!=1:return previous
@@ -17,6 +17,11 @@ def keep_pregame(previous, candidate, now):
         created=utc(candidate['created_at'])
         if created>now or any(created>=utc(r['Tip UTC']) or now>=utc(r['Tip UTC']) for r in rows):return previous
         if previous and ('settled_rows' in previous or created<=utc(previous['created_at'])):return previous
+        if prefer_confirmed and previous:
+            old=previous['rows'][0]
+            if (utc(old['Tip UTC'])==utc(rows[0]['Tip UTC'])
+                    and old.get('Lineup')=='Source confirmed' and rows[0].get('Lineup')!='Source confirmed'):
+                return previous
     except (KeyError,TypeError,ValueError):return previous
     return deepcopy(candidate)
 
@@ -72,6 +77,7 @@ def tracking_summary(records, basis='First points'):
                        'Shortlist hit':any(identity(r) in hits for r in shortlisted) if final and shortlisted else None,
                        'Lineup':ranked[0].get('Lineup','Unknown'),
                        'History window':record.get('settings',{}).get('games'),
+                       'Lineup checked at':record.get('lineup_feed_checked_at'),
                        'Saved at':record['created_at']})
     return sorted(result,key=lambda r:(r['Tip UTC'],r['Game ID']),reverse=True)
 
@@ -101,3 +107,37 @@ def live_first_basket(summary, event_id):
                             'Clock':first.get('clock',{}).get('displayValue',''),
                             'Method':'Free throw' if first['scoreValue']==1 else f"{first['scoreValue']}-pointer"}
     return None
+
+def window_comparison(records, lineup):
+    """Grade the same games across all windows, with an explicit Other outcome."""
+    windows=('5','10','15')
+    totals={w:[0,0,0.0] for w in windows}
+    eligible={}
+    for record in records:
+        rows=record.get('rows',[])
+        forecasts=record.get('window_forecasts',{})
+        scorer=record.get('first_scorer',{})
+        if (not rows or record.get('basis')!='First points' or not record.get('settled_rows')
+                or rows[0].get('Lineup')!=lineup or set(forecasts)!=set(windows)
+                or not scorer.get('Team ID') or not scorer.get('Player ID')):
+            continue
+        gid=rows[0]['Game ID']
+        created=utc(record['created_at'])
+        if created>=utc(rows[0]['Tip UTC']):continue
+        if gid not in eligible or created>utc(eligible[gid]['created_at']):eligible[gid]=record
+    for record in eligible.values():
+        scorer=record['first_scorer']
+        actual=f"{scorer['Team ID']}:{scorer['Player ID']}"
+        for w in windows:
+            forecast=record['window_forecasts'][w]
+            players=forecast['players']
+            ranked=sorted(players,key=lambda p:(-players[p],p.split(':',1)[1],p))
+            probs={**players,'Other':forecast['other']}
+            outcome=actual if actual in players else 'Other'
+            totals[w][0]+=int(ranked[0]==actual)
+            totals[w][1]+=int(actual in ranked[:3])
+            totals[w][2]+=sum((p-int(k==outcome))**2 for k,p in probs.items())
+    n=len(eligible)
+    return [{'Window':f'Last {w}','Games':n,'Top pick hits':f'{top} / {n}',
+             'Top 3 hits':f'{top3} / {n}','Brier score':brier/n}
+            for w,(top,top3,brier) in totals.items()] if n else []

@@ -87,3 +87,18 @@ class LiveScorerTests(unittest.TestCase):
         self.assertIsNone(live_first_basket(fixture(),'g'))
         d=fixture();d['plays']=[]
         self.assertIsNone(live_first_basket(d,'g'))
+
+class WindowComparisonTests(unittest.TestCase):
+    def test_unlisted_outcome_counts_in_probability_score(self):
+        from archive import window_comparison
+        now=datetime(2026,10,20,22,tzinfo=timezone.utc)
+        row={'Game ID':'g','Team ID':'A','Player ID':'A2',
+             'Tip UTC':'2026-10-20T23:00Z','Lineup':'Projected'}
+        result=settle(snapshot([row],'First points',now),fixture(),now+timedelta(hours=4))
+        result['window_forecasts']={str(w):{'players':{'A:A2':.75},'other':.25} for w in (5,10,15)}
+        compare=window_comparison([result],'Projected')
+        self.assertEqual(len(compare),3)
+        self.assertEqual(compare[0]['Top 3 hits'],'0 / 1')
+        self.assertAlmostEqual(compare[0]['Brier score'],1.125)
+        result['window_forecasts'].pop('10')
+        self.assertEqual(window_comparison([result],'Projected'),[])

@@ -31,7 +31,6 @@ class Client:
 
 def game_rows(e,year,client):
     hist={};meta={};selected={};flags=[]
-    current=client.get('summary?event='+e['id'])
     for c in competitors(e):
         tid=team_id(c)
         schedule=client.get(f'teams/{tid}/schedule?season={year}&seasontype=2')
@@ -44,18 +43,41 @@ def game_rows(e,year,client):
         hist[tid]=games
         rd=client.get(f'teams/{tid}/roster')
         meta[tid]={str(a['id']):{'name':a['displayName'],'position':a.get('position',{}).get('abbreviation','?')} for a in rd.get('athletes',[])}
+
+    # Check starter flags after the slower historical and roster requests.
+    # A failure leaves the projected forecast available with no check timestamp.
+    checked=None
+    try:
+        current=client.get('summary?event='+e['id'])
+        checked=datetime.now(timezone.utc)
+    except Exception:
+        current={}
+    comp=current.get('header',{}).get('competitions',[{}])[0]
+    state=comp.get('status',{}).get('type',{}).get('state')
+    if datetime.now(timezone.utc)>=utc(e['date']) or state in ('in','post'):
+        return [],{}
+    for tid,games in hist.items():
         confirmed=source_starters(current,e['id'],tid,meta[tid],e['date'])
         selected[tid]=confirmed or sorted(p for p in games[0]['starters'][tid] if p in meta[tid])
         if len(selected[tid])!=5:raise ValueError('Incomplete projected lineup')
         flags.append(bool(confirmed))
-    rows,_=forecast(hist,selected,meta)
+
+    rows,residual=forecast(hist,selected,meta)
     abbr={team_id(c):c['team']['abbreviation'] for c in competitors(e)}
     for r in rows:
         r.update({'Game ID':str(e['id']),'Matchup':e['shortName'],'Team':abbr[r['Team ID']],
                   'Tip UTC':e['date'],'Basis':'First points','Lineup':'Source confirmed' if all(flags) else 'Projected',
                   'Lineup source':'ESPN current-game flags' if all(flags) else 'Latest historical starters; awaiting ESPN',
-                  'Listed American odds':None})
-    return rows
+                  'Lineup checked at':checked.isoformat() if checked else None,'Listed American odds':None})
+    comparison={}
+    if all(len(games)==15 for games in hist.values()):
+        for window in (5,10,15):
+            candidates,other=(rows,residual) if window==15 else forecast(
+                {tid:games[:window] for tid,games in hist.items()},selected,meta)
+            comparison[str(window)]={'players':{
+                r['Team ID']+':'+r['Player ID']:r['Game first %']/100 for r in candidates},
+                'other':sum(other.values())}
+    return rows,comparison
 
 def write(path,payload):
     path.parent.mkdir(parents=True,exist_ok=True)
@@ -65,7 +87,7 @@ def run():
     now=datetime.now(timezone.utc);client=Client();DATA.mkdir(exist_ok=True)
     index_path=DATA/'index.json'
     index=json.loads(index_path.read_text()) if index_path.exists() else {'records':[]}
-    entries={x['path']:x for x in index.get('records',[])};errors=[];rows=[];seen=set()
+    entries={x['path']:x for x in index.get('records',[])};errors=[];rows=[];seen=set();comparisons={}
     # Date labels follow Eastern time; include tomorrow for midnight boundaries.
     for date in [now.astimezone(ET).date(),(now.astimezone(ET)+timedelta(days=1)).date()]:
         try:board=client.get('scoreboard?dates='+date.strftime('%Y%m%d')+'&limit=100')
@@ -76,12 +98,14 @@ def run():
             if e['id'] in seen:continue
             if e['status']['type']['state']=='pre' and now<utc(e['date'])<=now+timedelta(hours=2):
                 seen.add(e['id']);events.append(e)
+        events.sort(key=lambda e:utc(e['date']))
         def load(e):
             try:return game_rows(e,year,client),None
-            except Exception as ex:return [],f"{e['id']}: {type(ex).__name__}: {ex}"
+            except Exception as ex:return ([],{}),f"{e['id']}: {type(ex).__name__}: {ex}"
         with ThreadPoolExecutor(max_workers=2) as pool:
-            for got,error in pool.map(load,events):
+            for (got,comparison),error in pool.map(load,events):
                 rows.extend(got)
+                if got and comparison:comparisons[got[0]['Game ID']]=comparison
                 if error:errors.append(error)
     captured=datetime.now(timezone.utc)
     rows.sort(key=lambda r:(-r['Game first %'],r['Game ID'],r['Player ID']))
@@ -89,7 +113,7 @@ def run():
     team_counts={}
     for i,r in enumerate(rows,1):
         k=(r['Game ID'],r['Team ID']);team_counts[k]=team_counts.get(k,0)+1
-        r.update({'Overall Rank':i,'Team Rank':team_counts[k],'Shortlisted':(r['Game ID'],r['Player ID']) in chosen,'Lineup checked at':captured.isoformat()})
+        r.update({'Overall Rank':i,'Team Rank':team_counts[k],'Shortlisted':(r['Game ID'],r['Player ID']) in chosen})
     for gid in sorted({r['Game ID'] for r in rows}):
         subset=[r for r in rows if r['Game ID']==gid]
         date=utc(subset[0]['Tip UTC']).astimezone(ET).date().isoformat()
@@ -97,7 +121,9 @@ def run():
         previous=json.loads(path.read_text()) if path.exists() else None
         candidate=snapshot(subset,'First points',captured,'Automatic archive: games within two hours of tip; 15 current-season games maximum')
         candidate['settings']={'games':15,'previous_season':False}
-        kept=keep_pregame(previous,candidate,captured)
+        candidate['lineup_feed_checked_at']=subset[0]['Lineup checked at']
+        if gid in comparisons:candidate['window_forecasts']=comparisons[gid]
+        kept=keep_pregame(previous,candidate,captured,prefer_confirmed=True)
         if kept is not None and kept!=previous:write(path,kept)
         if kept is not None:entries[relative]={'path':relative,'date':date,'game_id':gid,'matchup':subset[0]['Matchup'],'created_at':kept['created_at'],'settled':bool(kept.get('settled_at'))}
     for relative,entry in entries.items():

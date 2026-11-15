@@ -12,9 +12,9 @@ if getattr(_model, 'VERSION', None) != '1.6.0':
     importlib.reload(_model)
 from model import fetch, competitors, team_id, utc, prior_events, parse_game, forecast, implied, VERSION, opening_context, select_shortlist, SHORTLIST_RULES, source_starters, tip_conversion, jumper_records, shot_style, position_summary, simulate_first_basket
 import archive as _archive
-if not hasattr(_archive, 'live_first_basket'):
+if not hasattr(_archive, 'window_comparison'):
     importlib.reload(_archive)
-from archive import snapshot as make_snapshot, keep_pregame, settle, tracking_summary, live_first_basket
+from archive import snapshot as make_snapshot, keep_pregame, settle, tracking_summary, live_first_basket, window_comparison
 
 ET = ZoneInfo('America/New_York')
 st.set_page_config(page_title='First Basket Match', page_icon='🏀', layout='wide')
@@ -223,6 +223,7 @@ def render_model():
                 active = [e for e in pregame if e['id'] in chosen_ids]
                 with st.spinner('Loading real opening possessions and historical starters…'):
                     loaded = load_matchup_history(active,year,n,prior,market)
+                rankings_slot=st.container()
                 all_rows, residuals, issues = [], [], []
                 for e in active:
                     gid = e['id']; hist = {}; selected = {}; metadata = {}; confirms=[]
@@ -236,7 +237,7 @@ def render_model():
                         st.warning('Both teams need valid completed regular-season games. This matchup is withheld. Try the previous-season option if appropriate.')
                         for c in cs: issues.extend(loaded[(gid,team_id(c))][1])
                         continue
-                    with st.expander('Starting lineups — automatic source check', expanded=True):
+                    with st.expander('Starting lineups — automatic source check'):
                         columns=st.columns(2)
                         for col,c in zip(columns,cs):
                             tid=team_id(c); games, errs=loaded[(gid,tid)]; hist[tid]=games; issues.extend(errs)
@@ -313,6 +314,7 @@ def render_model():
                     df=pd.DataFrame(all_rows).sort_values('Game first %',ascending=False).reset_index(drop=True)
                     df.insert(0,'Overall Rank',range(1,len(df)+1))
                     df.insert(1,'Team Rank',df.groupby(['Game ID','Team ID'])['Game first %'].rank(method='first',ascending=False).astype(int))
+                    df['Game Rank']=df.groupby('Game ID',sort=False).cumcount()+1
                     label_priority(df)
                     picks=select_shortlist(df.to_dict('records'),datetime.now(ET))
                     shortlisted={(str(r['Game ID']),str(r['Player ID'])) for r in picks}
@@ -334,22 +336,38 @@ def render_model():
                                         else: listed_odds[k]=int(price)
                                 st.caption('Enter live prices from your sportsbook. No odds feed is connected. Missing or invalid prices are saved as blank; no price is invented.')
                             preview['Your odds']=[f'{listed_odds[(str(r["Game ID"]),str(r["Player ID"]))]:+d}' if (str(r['Game ID']),str(r['Player ID'])) in listed_odds else '—' for r in picks]
-                            short_table.dataframe(preview[['Pick','Player','Team','Matchup','Research tier','Game first %','Your odds','Why ranked','Sample','Starts']].style.apply(priority_colors,axis=1).format({'Game first %':'{:.1f}'}),hide_index=True,width='stretch')
+                            short_table.dataframe(preview[['Pick','Player','Team','Matchup','Research tier','Game first %','Your odds']].style.apply(priority_colors,axis=1).format({'Game first %':'{:.1f}'}),hide_index=True,width='stretch')
                             if len(picks)<4: st.info(f'{len(picks)} eligible game(s). The model has not filled the remaining slots with weaker candidates.')
                         else:
                             st.info('No eligible shortlist yet. Starter status updates automatically; both teams need source-confirmed starters. Candidates also need five sampled games per team, three player starts, three early shot attempts, an opening-shot attempt and a team-first scoring hit in the sample.')
                         st.caption('Green: top eligible player in a game, source-confirmed starters, ≥15 sampled games per team and ≥8 player starts. Amber: limited history. Gray: awaiting starters. Color means research priority, not a guaranteed first basket.')
                     df['Shortlisted']=[(str(r['Game ID']),str(r['Player ID'])) in shortlisted for r in df.to_dict('records')]
                     df['Listed American odds']=[listed_odds.get((str(r['Game ID']),str(r['Player ID']))) for r in df.to_dict('records')]
-                    a,b,c=st.columns(3)
-                    a.metric('Players ranked',len(df));b.metric('Games loaded',df['Game ID'].nunique());c.metric('Lineups', 'Source confirmed' if (df['Lineup']=='Source confirmed').all() else 'Awaiting source')
-                    filt=st.multiselect('Team filter',sorted(df['Team'].unique()))
-                    shown=df[df['Team'].isin(filt)] if filt else df
-                    columns=['Overall Rank','Team Rank','Player','Team','Position','Game first %','Team first %','Research tier','Why ranked','Shot matchup','Opening shot %','Early FG %','Early FGA','Team scores first %','Team first hits','Starts','Sample','Lineup']
-                    st.dataframe(shown[columns].style.apply(priority_colors,axis=1).format({x:'{:.1f}' for x in ['Game first %','Team first %','Opening shot %','Early FG %','Team scores first %']},na_rep='—'),hide_index=True,width='stretch')
-                    st.caption('Green = top eligible game candidate with adequate history. Amber = limited history. Gray = awaiting source-confirmed starters. Other rows stay navy. Labels explain each color; overall ranks cover loaded matchups only.')
-                    st.dataframe(pd.DataFrame(residuals),hide_index=True,width='stretch')
-                    st.caption('Unlisted-player probability is retained, so the ten listed players are not forced to total 100%.')
+                    with rankings_slot:
+                        a,b,c=st.columns(3)
+                        a.metric('Players ranked',len(df))
+                        b.metric('Games loaded',df['Game ID'].nunique())
+                        c.metric('Confirmed lineups',f"{df.loc[df['Lineup']=='Source confirmed','Game ID'].nunique()} / {df['Game ID'].nunique()}")
+                        filt=st.multiselect('Team filter',sorted(df['Team'].unique()))
+                        shown=df[df['Team'].isin(filt)] if filt else df
+                        for event in active:
+                            game=shown[shown['Game ID']==event['id']]
+                            if game.empty:continue
+                            st.markdown(f"**{event['shortName']}**")
+                            simple=game[['Game Rank','Player','Team','Game first %','Lineup','Research tier']].rename(
+                                columns={'Game first %':'First Basket %','Lineup':'Lineup Status'})
+                            st.dataframe(simple.style.apply(priority_colors,axis=1).format({'First Basket %':'{:.1f}'}),
+                                         column_config={'Research tier':None},hide_index=True,width='stretch')
+                        st.caption('Green: top eligible candidate with enough history. Amber: limited history. Gray: projected starters.')
+                        with st.expander('Why this rank? — shot data, samples and full ranks'):
+                            cols=['Matchup','Game Rank','Overall Rank','Team Rank','Player','Team','Position','Game first %',
+                                  'Team first %','Research tier','Why ranked','Shot matchup','Opening shot %',
+                                  'Early FG %','Early FGA','Team first hits','Starts','Sample','Lineup']
+                            st.dataframe(shown[cols].style.apply(priority_colors,axis=1).format(
+                                {x:'{:.1f}' for x in ['Game first %','Team first %','Opening shot %','Early FG %']},
+                                na_rep='—'),hide_index=True,width='stretch')
+                            st.dataframe(pd.DataFrame(residuals),hide_index=True,width='stretch')
+                            st.caption('Overall ranks cover loaded matchups. Unlisted players keep their own probability.')
                     st.subheader('Compare a sportsbook price')
                     lookup={i:f"{r['Player']} · {r['Team']}" for i,r in df.iterrows()}
                     idx=st.selectbox('Player',list(lookup),format_func=lookup.get)
@@ -370,6 +388,7 @@ def render_model():
                         key=f'{market}:{game_id}'
                         candidate=make_snapshot(subset,market,utc(now),'This session: loaded matchups and current settings')
                         candidate['settings']=snap['settings']
+                        candidate['lineup_feed_checked_at']=subset[0].get('Lineup checked at')
                         kept=keep_pregame(session_records.get(key),candidate,datetime.now(ET))
                         if kept is not None:session_records[key]=kept
                     st.caption('Pregame board saved automatically for this open session. Background records use the default settings and are saved separately; downloads remain useful as your own copy.')
@@ -420,6 +439,10 @@ def render_model():
         pool=archived if source=='Background archive' else st.session_state.get('automatic_pregame_records',{})
         tracker_basis=st.selectbox('Saved record type',['First points','Field goal'],format_func=lambda b:'First Basket (includes free throws)' if b=='First points' else 'Older field-goal records')
         summary=tracking_summary(list(pool.values()),tracker_basis)
+        lineup_view=st.radio('Lineup status to grade',['Source confirmed','Projected'],
+                             index=0 if any(r['Lineup']=='Source confirmed' for r in summary) else 1,horizontal=True,
+                             help='Results are graded separately for confirmed and projected lineups.')
+        summary=[r for r in summary if r['Lineup']==lineup_view]
         if summary:
             for r in summary:r['Date (ET)']=utc(r['Tip UTC']).astimezone(ET).date().isoformat()
             dates=sorted({r['Date (ET)'] for r in summary},reverse=True)
@@ -433,13 +456,23 @@ def render_model():
             c.metric('Top-3 coverage',f"{sum(r['Top 3 hit'] for r in finals)} / {len(finals)}")
             d.metric('Shortlist hits',f"{sum(r['Shortlist hit'] for r in short)} / {len(short)}")
             view=pd.DataFrame(shown)
-            cols=['Date (ET)','Matchup','Status','First scorer','Pregame game rank','Pregame team rank','Pregame overall rank','Scorer model %','Top pick','Top pick hit','Top 3 hit','Shortlist pick','Shortlist hit','Lineup','History window']
+            view['Lineup checked (ET)']=view['Lineup checked at'].map(
+                lambda stamp:utc(stamp).astimezone(ET).strftime('%b %d, %I:%M:%S %p') if stamp else '—')
+            cols=['Date (ET)','Matchup','Status','First scorer','Pregame game rank','Pregame team rank','Pregame overall rank','Scorer model %','Top pick','Top pick hit','Top 3 hit','Shortlist pick','Shortlist hit','Lineup','History window','Lineup checked (ET)']
             st.dataframe(view[cols].style.format({'Scorer model %':'{:.1f}','Pregame game rank':'{:.0f}','Pregame team rank':'{:.0f}','Pregame overall rank':'{:.0f}','History window':'{:.0f}'},na_rep='—'),hide_index=True,width='stretch')
             st.caption(f"{len(shown)-len(finals)} pending game(s). Top-3 coverage means the scorer was among three candidates, not three winning bets. Ranks and estimates come only from saved pregame records. Overall rank applies to that record’s captured slate. Projected lineups remain labeled. Games without an eligible shortlist pick are excluded from the shortlist denominator. Sources and settlement types are kept separate; latest pregame record per game is counted once.")
             st.download_button('Download results tracker CSV',view.to_csv(index=False),file_name='first-basket-tracker.csv',mime='text/csv')
         else:
-            st.info('No saved records for this source and settlement yet. New First Basket forecasts save automatically near tip; completed games are settled by the background job. Older field-goal records can be viewed separately.')
-        st.caption('Future background captures use Last 15 and include free throws. Your open-session records preserve your chosen Last 5 / 10 / 15 setting. Missed pregame captures cannot be reconstructed after the game. Pending results refresh while the page is open and the archive is available.')
+            st.info('No saved records for this source, settlement and lineup status yet. Try Projected to see records captured before starters were confirmed. New First Basket forecasts save automatically near tip; completed games are settled by the background job. Older field-goal records can be viewed separately.')
+        st.caption('Last 15 remains the default. Saved pregame records preserve their lineup status and history setting.')
+        with st.expander('Compare Last 5, Last 10 and Last 15'):
+            comparison=window_comparison(archived.values(),lineup_view)
+            if comparison:
+                st.dataframe(pd.DataFrame(comparison).style.format({'Brier score':'{:.3f}'}),
+                             hide_index=True,width='stretch')
+            else:
+                st.info(f'No completed comparison games yet for {lineup_view.lower()} lineups.')
+            st.caption('Uses all available saved comparison games for the selected lineup status. All three windows use the same matchup and starters saved before tip, and both teams need 15 usable games. Lower Brier score means better probability forecasts. The score includes the chance an unlisted player scores first.')
         if automatic:
             def label(k):
                 r=automatic[k];first=r['rows'][0]
@@ -451,6 +484,9 @@ def render_model():
                 try:displayed=settle(record,live('summary?event='+str(record['rows'][0]['Game ID'])),datetime.now(ET))
                 except Exception:st.info('Final result data is not available yet. The saved pregame ranks are preserved.')
             st.caption(f"Scope: {record.get('scope','Saved board')}. Lineups: {record['rows'][0].get('Lineup','Unknown')}. This is a prospective record; older results are never used to reconstruct its pregame ranks.")
+            check_time=record.get('lineup_feed_checked_at')
+            if check_time:
+                st.caption(f"Starter feed checked {utc(check_time).astimezone(ET):%b %d, %I:%M:%S %p ET}.")
             rd=pd.DataFrame(displayed.get('settled_rows',record['rows']))
             cols=[c for c in ['Overall Rank','Team Rank','Player','Team','Game first %','Shortlisted','Game first hit','Team first hit'] if c in rd.columns]
             st.dataframe(rd[cols],hide_index=True,width='stretch')
